@@ -1,0 +1,15 @@
+[package]
+name = "hello-companion"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Example OCP plugin — built against ocp-plugin-sdk only (no kernel checkout). Compiles to wasm32-wasip1."
+publish = false
+
+# Excluded from the workspace: it targets wasm and depends only on the SDK,
+# proving the SEC-001 boundary (an author needs the SDK, not the kernel).
+[dependencies]
+ocp-plugin-sdk = { path = "../../packages/plugin-sdk" }
+
+[lib]
+crate-type = ["cdylib"]

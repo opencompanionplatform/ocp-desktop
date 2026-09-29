@@ -60,9 +60,13 @@ See `FORKING.md` for the project boundary between open source code and official 
 
 Do not report vulnerabilities through public issues. Follow `SECURITY.md` for coordinated disclosure.
 
-## Code signing
+## Code signing policy
 
 See `CODE_SIGNING.md`. OCP-owned release binaries are signed only through the approved release process. The PMv2-patched Godot runtime keeps upstream Godot identity and is outside the OCP Authenticode signing scope.
+
+**Free code signing provided by SignPath.io, certificate by SignPath Foundation.**
+
+OCP is completing the SignPath Foundation onboarding process. No artifact is described as SignPath-signed unless it was actually processed by the approved OCP SignPath configuration.
 
 ## License
 

@@ -2,7 +2,7 @@
     "schema":  "ocp-public-desktop-source/1",
     "sourceRepository":  "opencompanionplatform/ocp-platform",
     "publicRepository":  "opencompanionplatform/ocp-desktop",
-    "sourceCommit":  "41be0d35573f78fa0ff3d64c469b79ad004bf633",
+    "sourceCommit":  "4a6faa0ee6ee339a202dd2981577ab162e3a3d7f",
     "exportPolicy":  "desktop-client-allowlist-v1",
     "includedRoots":  [
                           ".cargo",
@@ -15,6 +15,8 @@
                           "services/kernel",
                           "services/launcher",
                           "spike/native-companion-window",
+                          "examples/hello-companion",
+                          "examples/build_example.ps1",
                           "config/marketplace-trust",
                           "release/build_windows_portable.ps1",
                           "release/Prepare-OcpWindowsRuntime.ps1",
@@ -40,7 +42,7 @@
                           "CODE_SIGNING.md",
                           "docs/public-desktop"
                       ],
-    "createdAt":  "2026-09-29T18:38:42Z",
-    "fileCount":  1091,
-    "contentTreeSha256":  "068778c5b6de81fd4814a7322f08e6c392da1ce45bb997c42168cb6b8084e0c1"
+    "createdAt":  "2026-09-29T23:18:11Z",
+    "fileCount":  1095,
+    "contentTreeSha256":  "455ce630a57e04c14a38d92d551750e33db988185c7054db436d70712735c7a1"
 }
