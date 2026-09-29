@@ -1,0 +1,8 @@
+{
+  "keyId": "ed25519:marketplace-root-3a42849c64d8fc58edbf83927d214779b2943f2fb4b032fd1dde6f3293e838bc",
+  "publicKeyHex": "4fb62f3323c4e294ff62b2757e7cc3e7e05d5e2ed26dfa5e280f66cadc23c512",
+  "trustDomain": "marketplace-staging",
+  "custody": "online-staging",
+  "issuedAt": 1790602594,
+  "expiresAt": 1822138594
+}

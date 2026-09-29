@@ -1,0 +1,22 @@
+[gd_scene format=3 uid="uid://wbwrgma06gfc"]
+
+[ext_resource type="Script" path="res://scripts/companion.gd" id="1_main"]
+
+[node name="Main" type="Node" unique_id=15276342]
+script = ExtResource("1_main")
+
+[node name="OcpRuntimeBridge" type="OcpRuntimeBridge" parent="." unique_id=788588007]
+
+[node name="BubbleLabel" type="Label" parent="." unique_id=2035090564]
+offset_left = 40.0
+offset_top = 40.0
+offset_right = 500.0
+offset_bottom = 90.0
+autowrap_mode = 3
+
+[node name="CompanionSprite" type="ColorRect" parent="." unique_id=3140552211]
+offset_left = 100.0
+offset_top = 150.0
+offset_right = 408.0
+offset_bottom = 458.0
+color = Color(1, 1, 1, 1)

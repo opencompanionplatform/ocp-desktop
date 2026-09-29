@@ -1,0 +1,14 @@
+[package]
+name = "ocp-desktop-physics"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Deterministic headless desktop companion physics core"
+
+[dependencies]
+ocp-desktop-world = { path = "../desktop-world" }
+ocp-shared-types = { path = "../shared-types" }
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

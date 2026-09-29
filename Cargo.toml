@@ -1,0 +1,55 @@
+[workspace]
+resolver = "2"
+members = [
+    "packages/shared-types",
+    "packages/event-bus",
+    "packages/ipc",
+    "packages/plugin-host",
+    "packages/plugin-sdk",
+    "packages/runtime-api",
+    "packages/runtime-stub",
+    "packages/behavior-api",
+    "packages/behavior-engine",
+    "packages/os-sensors",
+    "packages/ocp-sqlite-vec",
+    "packages/audio-store",
+    "packages/os-tts",
+    "packages/voice",
+    "packages/character-package",
+    "packages/effect-package",
+    "packages/llm-router",
+    "packages/activity-context",
+    "packages/memory",
+    "packages/companion-manager",
+    "services/kernel", "services/launcher",
+    "packages/package-loader", "packages/package-builder", "packages/package-registry", "packages/package-install", "packages/package-signer",
+    "packages/desktop-world",
+    "packages/desktop-sensors",
+    "packages/desktop-sensors-windows",
+    "packages/desktop-world-runtime",
+    "packages/desktop-physics",
+    "packages/update-core",
+]
+# Excluded from the workspace build:
+# - spike code is throwaway research (docs/WASI_SPIKE.md)
+# - the example plugin targets wasm and is compiled explicitly by its e2e test,
+#   proving an author builds against the SDK without a kernel checkout.
+exclude = [
+    "spike/wasi-guest",
+    "spike/native-companion-window",
+    "examples/hello-companion",
+    "examples/os-telemetry-monitor",
+    "apps/desktop-runtime/rust",
+]
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/opencompanionplatform/ocp-desktop"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# >=1.6: now_v7() monotonicity within a process (CS-EVT ids_are_time_ordered_uuidv7)
+uuid = { version = "1.6", features = ["v7", "v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }

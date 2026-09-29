@@ -1,0 +1,63 @@
+[package]
+name = "ocp-desktop-runtime-ext"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "GDExtension bridge for the Godot reference runtime (RUNTIME_API, ADR-0003). Owns IPC + envelope validation + §5 sanitization; GDScript owns presentation only."
+publish = false
+
+# Excluded from the main cargo workspace (see root Cargo.toml `exclude`):
+# building/linking a cdylib GDExtension is a different lifecycle from the
+# kernel crates (needs a matching Godot editor to actually load and run),
+# same treatment as examples/hello-companion and spike/wasi-guest.
+[lib]
+name = "ocp_runtime"
+crate-type = ["cdylib"]
+
+[dependencies]
+ocp-package-install = { path = "../../../packages/package-install" }
+ocp-shared-types = { path = "../../../packages/shared-types" }
+ocp-runtime-api = { path = "../../../packages/runtime-api" }
+ocp-ipc = { path = "../../../packages/ipc" }
+ocp-package-loader = { path = "../../../packages/package-loader" }
+ocp-character-package = { path = "../../../packages/character-package" }
+ocp-effect-package = { path = "../../../packages/effect-package" }
+ocp-llm-router = { path = "../../../packages/llm-router" }
+serde_json = "1"
+base64 = "0.22"
+chrono = "0.4"
+uuid = { version = "1.6", features = ["v7"] }
+ed25519-dalek = "2"
+zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
+sysinfo = "0.39"
+rusqlite = { version = "0.32", features = ["bundled"] }
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+zeroize = "1"
+semver = "1"
+
+[features]
+default = []
+local-beta-trust = []
+staging-marketplace-trust = []
+
+# The desktop Runtime is launched from the development starter throughout RC
+# acceptance, but package verification is CPU-bound cryptography/ZIP work. Keep
+# the Runtime crate itself debuggable while compiling dependencies (sha2,
+# ed25519, zip, jsonschema, package-loader, etc.) optimized. This preserves the
+# exact fail-closed verification path instead of weakening it with a trust cache.
+[profile.dev.package."*"]
+opt-level = 3
+
+[target.'cfg(windows)'.dependencies]
+interprocess = "2"
+widestring = "1"
+
+# Pin to a Godot 4.7.x-compatible gdext release (godotengine.org stable as of
+# 2026-07-19). Verify against `cargo search godot` / docs.rs before building —
+# gdext ships frequently.
+godot = "0.5"
+
+[dev-dependencies]
+ocp-package-builder = { path = "../../../packages/package-builder" }
+tempfile = "3"

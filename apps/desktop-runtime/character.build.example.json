@@ -1,0 +1,49 @@
+{
+  "id": "character.meowsom",
+  "name": "Meowsom",
+  "version": "1.0.0",
+  "outputFile": "meowsom.ocp",
+  "publisher": {
+    "id": "ocp.local",
+    "keyId": "local-poc"
+  },
+  "license": "Private POC",
+  "sheet": {
+    "width": 2048,
+    "height": 1024,
+    "columns": 4,
+    "rows": 2,
+    "frameWidth": 512,
+    "frameHeight": 512
+  },
+  "presentation": {
+    "scale": 1.0,
+    "bubbleAnchor": {
+      "x": 0,
+      "y": -220
+    },
+    "hitbox": {
+      "x": -128,
+      "y": -220,
+      "width": 256,
+      "height": 300
+    }
+  },
+  "animations": {
+    "idle": 8,
+    "appear": 8,
+    "disappear": 8,
+    "wave": 8,
+    "speak": 6,
+    "think": 8,
+    "walk_left": 8,
+    "walk_right": 8,
+    "sit": 4,
+    "sleep": 8,
+    "wake": 8,
+    "happy": 6,
+    "sad": 6,
+    "angry": 6,
+    "surprised": 6
+  }
+}

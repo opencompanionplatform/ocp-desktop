@@ -1,0 +1,907 @@
+[gd_scene load_steps=16 format=3]
+
+[ext_resource type="Script" path="res://scripts/runtime_v3/runtime_app.gd" id="1_app"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/ui/runtime_ui.gd" id="2_ui"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/ui/debug_overlay.gd" id="3_debug"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/ui/performance_overlay.gd" id="4_perf"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/controllers/startup_visibility_controller.gd" id="5_startup_visibility"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/controllers/bubble_anchor_controller.gd" id="6_bubble_anchor"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/ui/runtime_geometry_debug_overlay.gd" id="7_geometry_debug"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/controllers/hover_lifecycle_controller.gd" id="8_hover_lifecycle"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/ui/desktop_world_debug_overlay.gd" id="9_world_debug"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/ui/production_app_shell.gd" id="10_production_shell"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/ui/character_manager_shell.gd" id="11_character_manager_shell"]
+
+[sub_resource type="StyleBoxFlat" id="panel_style"]
+bg_color = Color(0.035, 0.065, 0.12, 0.96)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.18, 0.42, 0.78, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[sub_resource type="StyleBoxFlat" id="composer_style"]
+bg_color = Color(0.055, 0.075, 0.12, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.22, 0.42, 0.7, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[sub_resource type="StyleBoxFlat" id="chat_transcript_style"]
+bg_color = Color(0.025, 0.04, 0.075, 0.72)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.1, 0.2, 0.36, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[sub_resource type="StyleBoxFlat" id="assistant_card_style"]
+bg_color = Color(0.055, 0.09, 0.16, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.16, 0.34, 0.58, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+shadow_color = Color(0, 0, 0, 0.24)
+shadow_size = 4
+content_margin_left = 14.0
+content_margin_top = 12.0
+content_margin_right = 14.0
+content_margin_bottom = 12.0
+
+[sub_resource type="StyleBoxFlat" id="settings_field_style"]
+bg_color = Color(0.045, 0.075, 0.14, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.15, 0.32, 0.58, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+content_margin_left = 14.0
+content_margin_top = 10.0
+content_margin_right = 14.0
+content_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxFlat" id="settings_button_style"]
+bg_color = Color(0.12, 0.38, 0.78, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.35, 0.68, 1, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+content_margin_left = 18.0
+content_margin_top = 12.0
+content_margin_right = 18.0
+content_margin_bottom = 12.0
+
+[sub_resource type="StyleBoxFlat" id="settings_button_hover_style"]
+bg_color = Color(0.18, 0.5, 0.95, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.55, 0.8, 1, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+content_margin_left = 18.0
+content_margin_top = 12.0
+content_margin_right = 18.0
+content_margin_bottom = 12.0
+
+[node name="RuntimeApp" type="Node"]
+script = ExtResource("1_app")
+
+[node name="OcpRuntimeBridge" type="OcpRuntimeBridge" parent="."]
+
+[node name="RuntimeBootstrap" type="Node" parent="."]
+unique_name_in_owner = true
+
+[node name="RuntimeContext" type="Node" parent="."]
+unique_name_in_owner = true
+
+[node name="RuntimeStateMachine" type="Node" parent="."]
+unique_name_in_owner = true
+
+[node name="RuntimeEventBus" type="Node" parent="."]
+unique_name_in_owner = true
+
+[node name="RuntimeServices" type="Node" parent="."]
+unique_name_in_owner = true
+
+[node name="StartupVisibilityController" type="Node" parent="RuntimeServices"]
+unique_name_in_owner = true
+script = ExtResource("5_startup_visibility")
+
+[node name="Controllers" type="Node" parent="."]
+unique_name_in_owner = true
+
+[node name="BubbleAnchorController" type="Node" parent="Controllers"]
+unique_name_in_owner = true
+script = ExtResource("6_bubble_anchor")
+
+[node name="HoverLifecycleController" type="Node" parent="Controllers"]
+unique_name_in_owner = true
+script = ExtResource("8_hover_lifecycle")
+
+[node name="RuntimeSDK" type="Node" parent="."]
+unique_name_in_owner = true
+
+[node name="RuntimeUI" type="Node" parent="."]
+unique_name_in_owner = true
+script = ExtResource("2_ui")
+
+[node name="Background" type="ColorRect" parent="RuntimeUI"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0 
+color = Color(0.025, 0.03, 0.04, 1)
+mouse_filter = 2
+
+[node name="StatusBar" type="HBoxContainer" parent="RuntimeUI"]
+unique_name_in_owner = true
+visible = false
+offset_left = 16.0
+offset_top = 12.0
+offset_right = 760.0
+offset_bottom = 52.0
+
+[node name="StatusLabel" type="Label" parent="RuntimeUI/StatusBar"]
+unique_name_in_owner = true
+text = "Runtime V3 starting..."
+size_flags_horizontal = 3
+
+[node name="OverlayModeButton" type="Button" parent="RuntimeUI/StatusBar"]
+unique_name_in_owner = true
+text = "Mode: Debug Window"
+
+[node name="WorldDebugButton" type="Button" parent="RuntimeUI/StatusBar"]
+unique_name_in_owner = true
+text = "World Debug [F9]"
+
+[node name="CompanionLayer" type="Control" parent="RuntimeUI"]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="CompanionHost" type="Control" parent="RuntimeUI/CompanionLayer"]
+unique_name_in_owner = true
+offset_left = 500.0
+offset_top = 300.0
+offset_right = 808.0
+offset_bottom = 608.0
+mouse_filter = 2
+
+[node name="CompanionSprite" type="AnimatedSprite2D" parent="RuntimeUI/CompanionLayer/CompanionHost"]
+unique_name_in_owner = true
+position = Vector2(154, 154)
+visible = false
+
+[node name="BubbleLayer" type="Control" parent="RuntimeUI"]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="BubblePanel" type="PanelContainer" parent="RuntimeUI/BubbleLayer"]
+unique_name_in_owner = true
+offset_left = 480.0
+offset_top = 190.0
+offset_right = 820.0
+offset_bottom = 275.0
+visible = false
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="BubbleLabel" type="Label" parent="RuntimeUI/BubbleLayer/BubblePanel"]
+unique_name_in_owner = true
+text = "Bubble"
+autowrap_mode = 3
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="HoverMenu" type="PanelContainer" parent="RuntimeUI"]
+unique_name_in_owner = true
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 260.0
+offset_bottom = 360.0
+visible = false
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="Buttons" type="VBoxContainer" parent="RuntimeUI/HoverMenu"]
+theme_override_constants/separation = 6
+
+[node name="OpenQuickPanelButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "OCP Quick Panel"
+
+[node name="HoverSoundButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+disabled = true
+text = "🔊 Sound"
+
+[node name="HoverMuteAllButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "Mute All"
+
+[node name="HoverSfxButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "SFX: On"
+
+[node name="HoverVoiceButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "🗣 Voice"
+
+[node name="WaveButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "Wave"
+
+[node name="BubbleTestButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "Bubble Test"
+
+[node name="ChangeCharacterButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "Change Character"
+
+[node name="HoverHideToTrayButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "Hide to Tray"
+
+[node name="HoverExitButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "Exit"
+
+[node name="ContextMenu" type="PanelContainer" parent="RuntimeUI"]
+unique_name_in_owner = true
+offset_left = 780.0
+offset_top = 500.0
+offset_right = 1040.0
+offset_bottom = 680.0
+visible = false
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="QuickPanel" type="PanelContainer" parent="RuntimeUI"]
+unique_name_in_owner = true
+offset_left = 830.0
+offset_top = 90.0
+offset_right = 1220.0
+offset_bottom = 750.0
+visible = false
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="QuickVBox" type="VBoxContainer" parent="RuntimeUI/QuickPanel"]
+theme_override_constants/separation = 8
+
+[node name="QuickPanelDragHandle" type="PanelContainer" parent="RuntimeUI/QuickPanel/QuickVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 42)
+mouse_default_cursor_shape = 6
+
+[node name="Title" type="Label" parent="RuntimeUI/QuickPanel/QuickVBox/QuickPanelDragHandle"]
+text = "OCP Runtime V3 Quick Panel เนโฌโ€ drag here"
+horizontal_alignment = 1
+vertical_alignment = 1
+mouse_filter = 2
+
+[node name="CloseQuickPanelButton" type="Button" parent="RuntimeUI/QuickPanel/QuickVBox"]
+unique_name_in_owner = true
+text = "Close"
+
+[node name="HideToTrayButton" type="Button" parent="RuntimeUI/QuickPanel/QuickVBox"]
+unique_name_in_owner = true
+visible = false
+text = "Hide to Tray"
+
+[node name="AnimationTitle" type="Label" parent="RuntimeUI/QuickPanel/QuickVBox"]
+text = "Animations"
+
+[node name="AnimationScroll" type="ScrollContainer" parent="RuntimeUI/QuickPanel/QuickVBox"]
+custom_minimum_size = Vector2(360, 520)
+size_flags_vertical = 3
+
+[node name="AnimationList" type="VBoxContainer" parent="RuntimeUI/QuickPanel/QuickVBox/AnimationScroll"]
+unique_name_in_owner = true
+size_flags_horizontal = 3
+
+[node name="CharacterManagerWindow" type="Window" parent="."]
+unique_name_in_owner = true
+script = ExtResource("11_character_manager_shell")
+title = "OCP Character Manager"
+borderless = true
+initial_position = 1
+size = Vector2i(760, 640)
+min_size = Vector2i(640, 520)
+visible = false
+transient = false
+always_on_top = false
+transparent = false
+force_native = true
+
+[node name="CharacterPicker" type="PanelContainer" parent="CharacterManagerWindow"]
+unique_name_in_owner = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="PickerVBox" type="VBoxContainer" parent="CharacterManagerWindow/CharacterPicker"]
+theme_override_constants/separation = 8
+
+[node name="CharacterPickerDragHandle" type="PanelContainer" parent="CharacterManagerWindow/CharacterPicker/PickerVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 42)
+mouse_default_cursor_shape = 6
+
+[node name="Title" type="Label" parent="CharacterManagerWindow/CharacterPicker/PickerVBox/CharacterPickerDragHandle"]
+text = "Installed Characters"
+horizontal_alignment = 1
+vertical_alignment = 1
+mouse_filter = 2
+
+[node name="InstallPackageButton" type="Button" parent="CharacterManagerWindow/CharacterPicker/PickerVBox"]
+unique_name_in_owner = true
+text = "Install .ocp"
+
+[node name="PickerStatusLabel" type="Label" parent="CharacterManagerWindow/CharacterPicker/PickerVBox"]
+unique_name_in_owner = true
+text = ""
+autowrap_mode = 3
+
+[node name="PickerScroll" type="ScrollContainer" parent="CharacterManagerWindow/CharacterPicker/PickerVBox"]
+custom_minimum_size = Vector2(560, 440)
+size_flags_vertical = 3
+
+[node name="CharacterList" type="VBoxContainer" parent="CharacterManagerWindow/CharacterPicker/PickerVBox/PickerScroll"]
+unique_name_in_owner = true
+size_flags_horizontal = 3
+
+[node name="DesktopWorldDebugOverlay" type="Control" parent="RuntimeUI"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("9_world_debug")
+
+[node name="GeometryDebugOverlay" type="Control" parent="RuntimeUI"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("7_geometry_debug")
+
+[node name="DebugOverlay" type="CanvasLayer" parent="RuntimeUI"]
+unique_name_in_owner = true
+script = ExtResource("3_debug")
+
+[node name="PerformanceOverlay" type="CanvasLayer" parent="RuntimeUI"]
+unique_name_in_owner = true
+script = ExtResource("4_perf")
+
+[node name="NotificationPanel" type="PanelContainer" parent="RuntimeUI"]
+unique_name_in_owner = true
+offset_left = 440.0
+offset_top = 64.0
+offset_right = 840.0
+offset_bottom = 124.0
+visible = false
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="NotificationLabel" type="Label" parent="RuntimeUI/NotificationPanel"]
+unique_name_in_owner = true
+text = "Notification"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
+
+[node name="SoundPlayer" type="AudioStreamPlayer" parent="RuntimeUI"]
+unique_name_in_owner = true
+
+
+[node name="StartupLayer" type="CanvasLayer" parent="RuntimeUI"] 
+visible = false
+unique_name_in_owner = true
+layer = 2000
+
+[node name="Backdrop" type="ColorRect" parent="RuntimeUI/StartupLayer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0)
+mouse_filter = 2
+
+[node name="Center" type="CenterContainer" parent="RuntimeUI/StartupLayer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="Panel" type="PanelContainer" parent="RuntimeUI/StartupLayer/Center"]
+custom_minimum_size = Vector2(440, 180)
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="VBox" type="VBoxContainer" parent="RuntimeUI/StartupLayer/Center/Panel"]
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="Title" type="Label" parent="RuntimeUI/StartupLayer/Center/Panel/VBox"]
+text = "OCP Desktop Runtime"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 28
+
+[node name="StartupStatusLabel" type="Label" parent="RuntimeUI/StartupLayer/Center/Panel/VBox"]
+unique_name_in_owner = true
+text = "Loading active character..."
+horizontal_alignment = 1
+
+[node name="Hint" type="Label" parent="RuntimeUI/StartupLayer/Center/Panel/VBox"]
+text = "Runtime V3"
+horizontal_alignment = 1
+modulate = Color(1, 1, 1, 0.65)
+
+[node name="ChatWindow" type="Window" parent="."]
+unique_name_in_owner = true
+title = "OCP Chat"
+borderless = true
+unresizable = false
+# Absolute placement prevents Godot from re-centering this native window on
+# every show and overwriting the geometry owned by the custom OCP chrome.
+initial_position = 0
+size = Vector2i(1040, 740)
+min_size = Vector2i(820, 600)
+visible = false
+transient = false
+exclusive = false
+force_native = true
+
+[node name="ChatRoot" type="PanelContainer" parent="ChatWindow"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="ApplicationWindow" type="Window" parent="."]
+unique_name_in_owner = true
+script = ExtResource("10_production_shell")
+title = "Open Companion Platform"
+borderless = true
+unresizable = false
+# First-open placement is selected by ApplicationWindowController; subsequent
+# show calls must retain the user's own monitor and normal rectangle.
+initial_position = 0
+size = Vector2i(1280, 800)
+min_size = Vector2i(980, 650)
+visible = false
+transient = false
+exclusive = false
+force_native = true
+
+[node name="ApplicationRoot" type="PanelContainer" parent="ApplicationWindow"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="ApplicationLayout" type="VBoxContainer" parent="ApplicationWindow/ApplicationRoot"]
+theme_override_constants/separation = 12
+
+[node name="ApplicationTitle" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout"]
+text = "Open Companion Platform"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 28
+
+[node name="ApplicationTabs" type="TabContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout"]
+unique_name_in_owner = true
+size_flags_vertical = 3
+
+[node name="Chat" type="MarginContainer" parent="ChatWindow/ChatRoot"]
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 16
+
+[node name="ChatLayout" type="VBoxContainer" parent="ChatWindow/ChatRoot/Chat"]
+theme_override_constants/separation = 10
+
+[node name="ChatHeader" type="Label" parent="ChatWindow/ChatRoot/Chat/ChatLayout"]
+text = "Conversation"
+theme_override_font_sizes/font_size = 20
+
+[node name="ChatStatus" type="Label" parent="ChatWindow/ChatRoot/Chat/ChatLayout"]
+unique_name_in_owner = true
+text = "Local conversation · voice and provider transport are not configured"
+modulate = Color(0.55, 0.75, 0.95, 1)
+
+[node name="ChatTranscriptFrame" type="PanelContainer" parent="ChatWindow/ChatRoot/Chat/ChatLayout"]
+size_flags_vertical = 3
+custom_minimum_size = Vector2(0, 260)
+theme_override_styles/panel = SubResource("chat_transcript_style")
+
+[node name="TranscriptMargins" type="MarginContainer" parent="ChatWindow/ChatRoot/Chat/ChatLayout/ChatTranscriptFrame"]
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 12
+
+[node name="ChatTranscript" type="ScrollContainer" parent="ChatWindow/ChatRoot/Chat/ChatLayout/ChatTranscriptFrame/TranscriptMargins"]
+unique_name_in_owner = true
+scroll_active = true
+
+[node name="ChatMessages" type="VBoxContainer" parent="ChatWindow/ChatRoot/Chat/ChatLayout/ChatTranscriptFrame/TranscriptMargins/ChatTranscript"]
+unique_name_in_owner = true
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="AssistantRow" type="HBoxContainer" parent="ChatWindow/ChatRoot/Chat/ChatLayout/ChatTranscriptFrame/TranscriptMargins/ChatTranscript/ChatMessages"]
+size_flags_horizontal = 3
+
+[node name="AssistantCard" type="PanelContainer" parent="ChatWindow/ChatRoot/Chat/ChatLayout/ChatTranscriptFrame/TranscriptMargins/ChatTranscript/ChatMessages/AssistantRow"]
+custom_minimum_size = Vector2(400, 0)
+theme_override_styles/panel = SubResource("assistant_card_style")
+
+[node name="AssistantMargins" type="MarginContainer" parent="ChatWindow/ChatRoot/Chat/ChatLayout/ChatTranscriptFrame/TranscriptMargins/ChatTranscript/ChatMessages/AssistantRow/AssistantCard"]
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 12
+
+[node name="AssistantText" type="Label" parent="ChatWindow/ChatRoot/Chat/ChatLayout/ChatTranscriptFrame/TranscriptMargins/ChatTranscript/ChatMessages/AssistantRow/AssistantCard/AssistantMargins"]
+text = "OCP Assistant\n\nHello! I’m ready when you are. Connect an approved provider to enable live responses."
+autowrap_mode = 2
+theme_override_colors/font_color = Color(0.88, 0.93, 1, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="ChatInputRow" type="HBoxContainer" parent="ChatWindow/ChatRoot/Chat/ChatLayout"]
+theme_override_constants/separation = 8
+
+[node name="Composer" type="PanelContainer" parent="ChatWindow/ChatRoot/Chat/ChatLayout/ChatInputRow"]
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("composer_style")
+
+[node name="ComposerMargins" type="MarginContainer" parent="ChatWindow/ChatRoot/Chat/ChatLayout/ChatInputRow/Composer"]
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 10
+
+[node name="ChatInput" type="TextEdit" parent="ChatWindow/ChatRoot/Chat/ChatLayout/ChatInputRow/Composer/ComposerMargins"]
+unique_name_in_owner = true
+placeholder_text = "Write a message..."
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 40)
+scroll_fit_content_height = true
+wrap_mode = 1
+theme_override_font_sizes/font_size = 16
+
+[node name="VoiceChatButton" type="Button" parent="ChatWindow/ChatRoot/Chat/ChatLayout/ChatInputRow"]
+unique_name_in_owner = true
+tooltip_text = "Voice chat input (adapter not configured)"
+text = "🎙  Mic"
+custom_minimum_size = Vector2(46, 46)
+
+[node name="SendChatButton" type="Button" parent="ChatWindow/ChatRoot/Chat/ChatLayout/ChatInputRow"]
+unique_name_in_owner = true
+text = "Send  ↑"
+custom_minimum_size = Vector2(50, 46)
+
+[node name="ChatFootnote" type="Label" parent="ChatWindow/ChatRoot/Chat/ChatLayout"]
+text = "Enter your message above. Voice chat will become available when an audio input adapter is configured."
+modulate = Color(0.55, 0.6, 0.7, 1)
+
+[node name="Settings" type="MarginContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs"]
+theme_override_constants/margin_left = 28
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 28
+theme_override_constants/margin_bottom = 24
+
+[node name="SettingsLayout" type="VBoxContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings"]
+theme_override_constants/separation = 16
+
+[node name="SettingsHeading" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout"]
+text = "General Settings"
+theme_override_font_sizes/font_size = 22
+
+[node name="SettingsIntro" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout"]
+text = "Control local presentation behavior. Changes are stored on this device."
+modulate = Color(0.55, 0.65, 0.78, 1)
+
+[node name="PresentationSection" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout"]
+text = "Presentation"
+theme_override_colors/font_color = Color(0.55, 0.75, 1, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="ShowBubblesToggle" type="CheckButton" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout"]
+unique_name_in_owner = true
+text = "Show speech bubbles"
+button_pressed = true
+custom_minimum_size = Vector2(0, 48)
+theme_override_font_sizes/font_size = 17
+theme_override_constants/icon_max_width = 44
+theme_override_constants/h_separation = 14
+
+[node name="OfflinePresenceToggle" type="CheckButton" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout"]
+unique_name_in_owner = true
+text = "Enable offline companion activity"
+button_pressed = true
+custom_minimum_size = Vector2(0, 48)
+theme_override_font_sizes/font_size = 17
+theme_override_constants/icon_max_width = 44
+theme_override_constants/h_separation = 14
+
+[node name="OfflineBotStatusLabel" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout"]
+unique_name_in_owner = true
+text = "Offline Bot: Running"
+modulate = Color(0.55, 0.65, 0.78, 1)
+theme_override_font_sizes/font_size = 14
+
+[node name="ResourceMonitorCard" type="PanelContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout"]
+custom_minimum_size = Vector2(0, 108)
+theme_override_styles/panel = SubResource("settings_field_style")
+
+[node name="ResourceMonitorLayout" type="VBoxContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout/ResourceMonitorCard"]
+theme_override_constants/separation = 4
+
+[node name="ResourceMonitorHeading" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout/ResourceMonitorCard/ResourceMonitorLayout"]
+text = "Resource Monitor"
+theme_override_colors/font_color = Color(0.55, 0.75, 1, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="ResourceValues" type="HBoxContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout/ResourceMonitorCard/ResourceMonitorLayout"]
+theme_override_constants/separation = 24
+
+[node name="ResourceCpuLabel" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout/ResourceMonitorCard/ResourceMonitorLayout/ResourceValues"]
+unique_name_in_owner = true
+text = "CPU  —"
+theme_override_font_sizes/font_size = 16
+
+[node name="ResourceMemoryLabel" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout/ResourceMonitorCard/ResourceMonitorLayout/ResourceValues"]
+unique_name_in_owner = true
+text = "Memory  —"
+theme_override_font_sizes/font_size = 16
+
+[node name="ResourceStatusLabel" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout/ResourceMonitorCard/ResourceMonitorLayout"]
+unique_name_in_owner = true
+text = "Resource telemetry unavailable"
+modulate = Color(0.6, 0.65, 0.72, 1)
+theme_override_font_sizes/font_size = 13
+
+[node name="ThemePresetLabel" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout"]
+text = "Theme preset"
+theme_override_colors/font_color = Color(0.55, 0.75, 1, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="ThemePresetOption" type="OptionButton" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+theme_override_font_sizes/font_size = 17
+theme_override_styles/normal = SubResource("settings_field_style")
+theme_override_styles/hover = SubResource("settings_field_style")
+theme_override_styles/focus = SubResource("settings_field_style")
+
+[node name="UpdateChannelLabelText" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout"]
+text = "Update channel"
+
+[node name="UpdateChannelOption" type="OptionButton" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+theme_override_font_sizes/font_size = 17
+theme_override_styles/normal = SubResource("settings_field_style")
+theme_override_styles/hover = SubResource("settings_field_style")
+theme_override_styles/focus = SubResource("settings_field_style")
+
+[node name="SaveSettingsButton" type="Button" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout"]
+unique_name_in_owner = true
+text = "Save settings"
+custom_minimum_size = Vector2(0, 52)
+theme_override_font_sizes/font_size = 17
+theme_override_styles/normal = SubResource("settings_button_style")
+theme_override_styles/hover = SubResource("settings_button_hover_style")
+theme_override_styles/pressed = SubResource("settings_button_hover_style")
+
+[node name="SettingsStatusLabel" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Settings/SettingsLayout"]
+unique_name_in_owner = true
+text = "Settings are stored locally."
+
+[node name="Updates" type="MarginContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs"]
+theme_override_constants/margin_left = 28
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 28
+theme_override_constants/margin_bottom = 24
+
+[node name="UpdatesScroll" type="ScrollContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="UpdatesLayout" type="VBoxContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 18
+
+[node name="UpdatesHeading" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout"]
+text = "Update Center"
+theme_override_font_sizes/font_size = 32
+
+[node name="UpdatesSubtitle" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout"]
+text = "Keep OCP secure, current and ready."
+theme_override_colors/font_color = Color(0.62, 0.73, 0.86, 1)
+theme_override_font_sizes/font_size = 14
+
+[node name="UpdateStatusCard" type="PanelContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout"]
+custom_minimum_size = Vector2(0, 176)
+
+[node name="StatusMargin" type="MarginContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateStatusCard"]
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="StatusStack" type="VBoxContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateStatusCard/StatusMargin"]
+theme_override_constants/separation = 12
+
+[node name="StatusTopRow" type="HBoxContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateStatusCard/StatusMargin/StatusStack"]
+theme_override_constants/separation = 18
+
+[node name="StatusCopy" type="VBoxContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateStatusCard/StatusMargin/StatusStack/StatusTopRow"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 5
+
+[node name="UpdateStatusEyebrow" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateStatusCard/StatusMargin/StatusStack/StatusTopRow/StatusCopy"]
+text = "OCP Runtime"
+theme_override_colors/font_color = Color(0.46, 0.76, 1, 1)
+theme_override_font_sizes/font_size = 13
+
+[node name="CurrentVersionLabel" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateStatusCard/StatusMargin/StatusStack/StatusTopRow/StatusCopy"]
+unique_name_in_owner = true
+text = "Current version: 0.1.0"
+theme_override_font_sizes/font_size = 24
+
+[node name="UpdateChannelPill" type="PanelContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateStatusCard/StatusMargin/StatusStack/StatusTopRow"]
+custom_minimum_size = Vector2(170, 42)
+
+[node name="PillCenter" type="CenterContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateStatusCard/StatusMargin/StatusStack/StatusTopRow/UpdateChannelPill"]
+
+[node name="UpdateChannelLabel" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateStatusCard/StatusMargin/StatusStack/StatusTopRow/UpdateChannelPill/PillCenter"]
+unique_name_in_owner = true
+text = "Channel: Stable"
+theme_override_font_sizes/font_size = 14
+
+[node name="StatusDivider" type="HSeparator" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateStatusCard/StatusMargin/StatusStack"]
+
+[node name="UpdateReadinessLabel" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateStatusCard/StatusMargin/StatusStack"]
+unique_name_in_owner = true
+text = "Signed update check is not enabled in this development build."
+autowrap_mode = 3
+theme_override_colors/font_color = Color(0.9, 0.94, 1, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="UpdateSecurityCard" type="PanelContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout"]
+custom_minimum_size = Vector2(0, 166)
+
+[node name="SecurityMargin" type="MarginContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateSecurityCard"]
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="SecurityStack" type="VBoxContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateSecurityCard/SecurityMargin"]
+theme_override_constants/separation = 10
+
+[node name="UpdateSecurityTitle" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateSecurityCard/SecurityMargin/SecurityStack"]
+text = "Signed update protection"
+theme_override_font_sizes/font_size = 20
+
+[node name="UpdateSafetyLabel" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateSecurityCard/SecurityMargin/SecurityStack"]
+text = "The check is read-only until the pinned key, HTTPS manifest and packaged Rust updater are present."
+autowrap_mode = 3
+theme_override_colors/font_color = Color(0.62, 0.73, 0.86, 1)
+theme_override_font_sizes/font_size = 14
+
+[node name="SecurityBadges" type="HBoxContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateSecurityCard/SecurityMargin/SecurityStack"]
+theme_override_constants/separation = 18
+
+[node name="PinnedKeyBadge" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateSecurityCard/SecurityMargin/SecurityStack/SecurityBadges"]
+text = "○  Pinned key"
+theme_override_colors/font_color = Color(0.54, 0.72, 0.9, 1)
+theme_override_font_sizes/font_size = 12
+
+[node name="HttpsBadge" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateSecurityCard/SecurityMargin/SecurityStack/SecurityBadges"]
+text = "○  HTTPS manifest"
+theme_override_colors/font_color = Color(0.54, 0.72, 0.9, 1)
+theme_override_font_sizes/font_size = 12
+
+[node name="RustUpdaterBadge" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateSecurityCard/SecurityMargin/SecurityStack/SecurityBadges"]
+text = "○  Rust updater"
+theme_override_colors/font_color = Color(0.54, 0.72, 0.9, 1)
+theme_override_font_sizes/font_size = 12
+
+[node name="UpdateActionsCard" type="PanelContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout"]
+custom_minimum_size = Vector2(0, 154)
+
+[node name="ActionsMargin" type="MarginContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateActionsCard"]
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="ActionsStack" type="VBoxContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateActionsCard/ActionsMargin"]
+theme_override_constants/separation = 10
+
+[node name="UpdateActionsTitle" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateActionsCard/ActionsMargin/ActionsStack"]
+text = "Update actions"
+theme_override_font_sizes/font_size = 20
+
+[node name="UpdateActionsSubtitle" type="Label" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateActionsCard/ActionsMargin/ActionsStack"]
+text = "Check readiness first. Installation becomes available when a trusted staged update is ready."
+autowrap_mode = 3
+theme_override_colors/font_color = Color(0.62, 0.73, 0.86, 1)
+theme_override_font_sizes/font_size = 14
+
+[node name="ActionRow" type="HBoxContainer" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateActionsCard/ActionsMargin/ActionsStack"]
+theme_override_constants/separation = 12
+
+[node name="CheckUpdatesButton" type="Button" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateActionsCard/ActionsMargin/ActionsStack/ActionRow"]
+unique_name_in_owner = true
+text = "Check for updates"
+custom_minimum_size = Vector2(250, 50)
+theme_override_font_sizes/font_size = 16
+theme_override_styles/normal = SubResource("settings_button_style")
+theme_override_styles/hover = SubResource("settings_button_hover_style")
+
+[node name="InstallUpdateButton" type="Button" parent="ApplicationWindow/ApplicationRoot/ApplicationLayout/ApplicationTabs/Updates/UpdatesScroll/UpdatesLayout/UpdateActionsCard/ActionsMargin/ActionsStack/ActionRow"]
+unique_name_in_owner = true
+text = "Install staged update (check first)"
+disabled = true
+custom_minimum_size = Vector2(330, 50)
+theme_override_font_sizes/font_size = 16
+theme_override_styles/normal = SubResource("settings_button_style")
+theme_override_styles/hover = SubResource("settings_button_hover_style")

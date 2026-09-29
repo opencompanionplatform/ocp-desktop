@@ -1,0 +1,155 @@
+[gd_scene format=3 uid="uid://cj73yleb0j6pd"]
+
+[ext_resource type="Script" uid="uid://cqcowxta4hqnb" path="res://scripts/app/app_shell.gd" id="1"]
+[ext_resource type="Theme" uid="uid://b8h2fafdau76" path="res://themes/studio_theme.tres" id="2"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxPurpleBtn"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(0.482, 0.38, 1, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[node name="AppShell" type="Control" unique_id=775830917]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2")
+script = ExtResource("1")
+
+[node name="Background" type="ColorRect" parent="." unique_id=197958396]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.043, 0.055, 0.078, 1)
+
+[node name="Margin" type="MarginContainer" parent="." unique_id=764737479]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 10
+
+[node name="MainVBox" type="VBoxContainer" parent="Margin" unique_id=36112554]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Header" type="HBoxContainer" parent="Margin/MainVBox" unique_id=935742669]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="BtnMenuToggle" type="Button" parent="Margin/MainVBox/Header" unique_id=51901118]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 0)
+layout_mode = 2
+text = "☰"
+
+[node name="Title" type="Label" parent="Margin/MainVBox/Header" unique_id=1856799391]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "OCP Companion Platform"
+
+[node name="ProjectName" type="Label" parent="Margin/MainVBox/Header" unique_id=1323402095]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.7, 0.75, 0.85, 1)
+theme_override_font_sizes/font_size = 14
+text = "OCP Desktop Platform 🏠"
+horizontal_alignment = 1
+
+[node name="SessionInfo" type="Label" parent="Margin/MainVBox/Header" unique_id=187855930]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.5, 0.6, 0.7, 1)
+text = "Guest"
+
+[node name="SaveDraft" type="Button" parent="Margin/MainVBox/Header" unique_id=1692966983]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "Save draft"
+
+[node name="BuildPackage" type="Button" parent="Margin/MainVBox/Header" unique_id=220815740]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_styles/normal = SubResource("StyleBoxPurpleBtn")
+text = "Build package"
+
+[node name="CenterArea" type="HBoxContainer" parent="Margin/MainVBox" unique_id=532270576]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="Nav" type="PanelContainer" parent="Margin/MainVBox/CenterArea" unique_id=131108556]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+
+[node name="Menu" type="VBoxContainer" parent="Margin/MainVBox/CenterArea/Nav" unique_id=2141437949]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Home" type="Button" parent="Margin/MainVBox/CenterArea/Nav/Menu" unique_id=1410193255]
+unique_name_in_owner = true
+layout_mode = 2
+text = "🏠  Home"
+alignment = 0
+
+[node name="Companions" type="Button" parent="Margin/MainVBox/CenterArea/Nav/Menu" unique_id=1572334715]
+layout_mode = 2
+text = "👥  Companions"
+alignment = 0
+
+[node name="Marketplace" type="Button" parent="Margin/MainVBox/CenterArea/Nav/Menu" unique_id=212277867]
+layout_mode = 2
+text = "🛍️  Marketplace"
+alignment = 0
+
+[node name="StudioNav" type="Button" parent="Margin/MainVBox/CenterArea/Nav/Menu" unique_id=113354518]
+unique_name_in_owner = true
+layout_mode = 2
+text = "🪄  Character Studio"
+alignment = 0
+
+[node name="Library" type="Button" parent="Margin/MainVBox/CenterArea/Nav/Menu" unique_id=1258035302]
+layout_mode = 2
+text = "📚  Library"
+alignment = 0
+
+[node name="Downloads" type="Button" parent="Margin/MainVBox/CenterArea/Nav/Menu" unique_id=1506944808]
+layout_mode = 2
+text = "📥  Downloads"
+alignment = 0
+
+[node name="SettingsNav" type="Button" parent="Margin/MainVBox/CenterArea/Nav/Menu" unique_id=813869794]
+layout_mode = 2
+text = "⚙️  Settings"
+alignment = 0
+
+[node name="PageContainer" type="PanelContainer" parent="Margin/MainVBox/CenterArea" unique_id=1772635531]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[connection signal="pressed" from="Margin/MainVBox/Header/BtnMenuToggle" to="." method="_on_btn_menu_toggle_pressed"]
+[connection signal="pressed" from="Margin/MainVBox/Header/SaveDraft" to="." method="_on_save_draft_pressed"]
+[connection signal="pressed" from="Margin/MainVBox/Header/BuildPackage" to="." method="_on_build_package_pressed"]

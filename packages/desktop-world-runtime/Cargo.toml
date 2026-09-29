@@ -1,0 +1,18 @@
+[package]
+name = "ocp-desktop-world-runtime"
+version = "0.2.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "OCP Desktop World runtime with frozen typed event catalog"
+
+[dependencies]
+ocp-desktop-world = { path = "../desktop-world" }
+ocp-event-bus = { path = "../event-bus" }
+ocp-shared-types = { path = "../shared-types" }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+chrono.workspace = true
+ocp-desktop-sensors = { path = "../desktop-sensors" }
+ocp-desktop-sensors-windows = { path = "../desktop-sensors-windows" }

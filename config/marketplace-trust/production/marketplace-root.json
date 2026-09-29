@@ -1,0 +1,8 @@
+{
+  "keyId": "ed25519:marketplace-root-ea7764bd3e907eda74a3dbbb2b3e386c984675854cbf77c3698b46e8090877b7",
+  "publicKeyHex": "1a4e72323dae6092880c0615234a61e5b08c09f81a2035e71f126d4b3a77b60b",
+  "trustDomain": "marketplace-release",
+  "custody": "offline-root",
+  "issuedAt": 1788668603,
+  "expiresAt": 1946348603
+}

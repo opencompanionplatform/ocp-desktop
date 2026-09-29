@@ -1,0 +1,16 @@
+[package]
+name = "ocp-runtime-stub"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Headless reference runtime — the NFR-001 swap-test peer. Implements the full RUNTIME_API minimal set with no graphics, so CS-RT certifies the contract is runtime-neutral (a non-Godot runtime binds it identically)."
+
+[dependencies]
+ocp-shared-types = { path = "../shared-types" }
+ocp-runtime-api = { path = "../runtime-api" }
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+serde.workspace = true

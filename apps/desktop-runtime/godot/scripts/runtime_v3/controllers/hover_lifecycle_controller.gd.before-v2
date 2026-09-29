@@ -1,0 +1,96 @@
+class_name RuntimeV3HoverLifecycleController
+extends Node
+## Wires lifecycle actions owned by the Hover Menu.
+##
+## Hide to Tray is handled here because the button is part of RuntimeApp.tscn,
+## while the actual window lifecycle remains owned by WindowController.
+
+@export var hide_button_path: NodePath = NodePath(
+	"../../RuntimeUI/HoverMenu/Buttons/HoverHideToTrayButton"
+)
+@export var hover_menu_path: NodePath = NodePath(
+	"../../RuntimeUI/HoverMenu"
+)
+@export var window_controller_path: NodePath = NodePath(
+	"../WindowController"
+)
+
+var _hide_button: Button = null
+var _hover_menu: Control = null
+var _window_controller: Node = null
+
+
+func _ready() -> void:
+	_hide_button = get_node_or_null(hide_button_path) as Button
+	_hover_menu = get_node_or_null(hover_menu_path) as Control
+	_window_controller = get_node_or_null(window_controller_path)
+
+	if _hide_button == null:
+		push_error(
+			"[HoverLifecycle] HoverHideToTrayButton not found: %s"
+			% hide_button_path
+		)
+		return
+
+	if _window_controller == null:
+		_window_controller = _find_window_controller(get_tree().current_scene)
+
+	if _window_controller == null:
+		push_error("[HoverLifecycle] WindowController not found")
+		return
+
+	if not _hide_button.pressed.is_connected(_on_hide_to_tray_pressed):
+		_hide_button.pressed.connect(_on_hide_to_tray_pressed)
+
+	print("[HoverLifecycle] Hide to Tray button connected")
+
+
+func _on_hide_to_tray_pressed() -> void:
+	# Hide the hover surface first so it cannot remain visible during minimize.
+	if _hover_menu != null:
+		_hover_menu.visible = false
+
+	if _window_controller.has_method("hide_to_tray"):
+		_window_controller.call_deferred("hide_to_tray")
+		print("[HoverLifecycle] Hide to Tray requested")
+		return
+
+	if _window_controller.has_method("request_hide_to_tray"):
+		_window_controller.call_deferred("request_hide_to_tray")
+		print("[HoverLifecycle] Hide to Tray requested")
+		return
+
+	push_error(
+		"[HoverLifecycle] WindowController has no hide_to_tray method"
+	)
+
+
+func _find_window_controller(root: Node) -> Node:
+	if root == null:
+		return null
+
+	var candidate_names := [
+		"WindowController",
+		"RuntimeWindowController",
+	]
+
+	for candidate_name in candidate_names:
+		var candidate: Node = root.find_child(
+			candidate_name,
+			true,
+			false
+		)
+
+		if candidate != null:
+			return candidate
+
+	for child in root.get_children():
+		if child.has_method("hide_to_tray"):
+			return child
+
+		var nested: Node = _find_window_controller(child)
+
+		if nested != null:
+			return nested
+
+	return null

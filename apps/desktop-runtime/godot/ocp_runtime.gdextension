@@ -1,0 +1,25 @@
+; GDExtension manifest for the OcpRuntimeBridge (apps/desktop-runtime/rust).
+;
+; entry_symbol: gdext generates this from the #[gdextension] macro. "gdext_rust_init"
+; is the conventional name for recent gdext releases — verify against your
+; installed version (e.g. `dumpbin /exports bin\...\ocp_desktop_runtime_ext.dll`
+; on Windows, or gdext's "Setting up your project" doc) and correct if it
+; built under a different symbol.
+;
+; Library paths point at apps/desktop-runtime/godot/bin/, which build.ps1
+; populates from the Rust crate's target/ output (not committed to git).
+
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = "4.2"
+reloadable = true
+
+[libraries]
+windows.debug.x86_64 = "res://bin/windows/x86_64/ocp_desktop_runtime_ext.dll"
+windows.release.x86_64 = "res://bin/windows/x86_64/ocp_desktop_runtime_ext.dll"
+windows.debug.arm64 = "res://bin/windows/arm64/ocp_desktop_runtime_ext.dll"
+windows.release.arm64 = "res://bin/windows/arm64/ocp_desktop_runtime_ext.dll"
+linux.debug.x86_64 = "res://bin/linux/x86_64/libocp_desktop_runtime_ext.so"
+linux.release.x86_64 = "res://bin/linux/x86_64/libocp_desktop_runtime_ext.so"
+macos.debug = "res://bin/macos/libocp_desktop_runtime_ext.dylib"
+macos.release = "res://bin/macos/libocp_desktop_runtime_ext.dylib"

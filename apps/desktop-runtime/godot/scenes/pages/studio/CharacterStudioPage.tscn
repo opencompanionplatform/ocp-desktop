@@ -1,0 +1,417 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/studio/studio_controller.gd" id="1"]
+[ext_resource type="Theme" path="res://themes/studio_theme.tres" id="2"]
+
+[sub_resource type="StyleBoxFlat" id="Card"]
+bg_color = Color(0.055, 0.07, 0.105, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.14, 0.18, 0.28, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+content_margin_left = 14.0
+content_margin_top = 14.0
+content_margin_right = 14.0
+content_margin_bottom = 14.0
+
+[node name="CharacterStudioPage" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2")
+script = ExtResource("1")
+
+[node name="Root" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = 12.0
+offset_right = -12.0
+offset_bottom = -12.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="WizardCard" type="PanelContainer" parent="Root"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("Card")
+
+[node name="WizardRow" type="HBoxContainer" parent="Root/WizardCard"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Wizard1" type="Button" parent="Root/WizardCard/WizardRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "✓  Identity"
+[node name="Wizard2" type="Button" parent="Root/WizardCard/WizardRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "2  Artwork"
+[node name="Wizard3" type="Button" parent="Root/WizardCard/WizardRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "3  Grid"
+[node name="Wizard4" type="Button" parent="Root/WizardCard/WizardRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "4  Animations"
+[node name="Wizard5" type="Button" parent="Root/WizardCard/WizardRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "5  License"
+[node name="Wizard6" type="Button" parent="Root/WizardCard/WizardRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "6  Preview"
+[node name="Wizard7" type="Button" parent="Root/WizardCard/WizardRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "7  Validate"
+[node name="Wizard8" type="Button" parent="Root/WizardCard/WizardRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "8  Build"
+
+[node name="Main" type="HBoxContainer" parent="Root"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="WorkspaceCard" type="PanelContainer" parent="Root/Main"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("Card")
+
+[node name="Workspace" type="VBoxContainer" parent="Root/Main/WorkspaceCard"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="StepTitle" type="Label" parent="Root/Main/WorkspaceCard/Workspace"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Step 1 / 8   Identity"
+[node name="StepCaption" type="Label" parent="Root/Main/WorkspaceCard/Workspace"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Define the companion package identity."
+modulate = Color(0.72,0.76,0.86,1)
+
+[node name="Separator" type="HSeparator" parent="Root/Main/WorkspaceCard/Workspace"]
+layout_mode = 2
+
+[node name="StepScroll" type="ScrollContainer" parent="Root/Main/WorkspaceCard/Workspace"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="StepStack" type="VBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Identity" type="VBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack"]
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="NameLabel" type="Label" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Identity"]
+layout_mode = 2
+text = "Character name"
+[node name="NameEdit" type="LineEdit" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Identity"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Aiko"
+[node name="PackageLabel" type="Label" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Identity"]
+layout_mode = 2
+text = "Package ID"
+[node name="PackageIdEdit" type="LineEdit" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Identity"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "ocp.character.aiko"
+[node name="VersionLabel" type="Label" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Identity"]
+layout_mode = 2
+text = "Version"
+[node name="VersionEdit" type="LineEdit" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Identity"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0.1.0"
+
+[node name="Artwork" type="VBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 10
+[node name="Hint" type="Label" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Artwork"]
+layout_mode = 2
+text = "Import one sprite sheet or several PNG files. Every imported image becomes a selectable source."
+autowrap_mode = 2
+[node name="ImportBtn" type="Button" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Artwork"]
+layout_mode = 2
+text = "+  Import PNG files"
+[node name="SpriteInfo" type="Label" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Artwork"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "No artwork imported."
+[node name="SheetList" type="ItemList" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Artwork"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 100)
+auto_height = true
+[node name="SheetSelect" type="OptionButton" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Artwork"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Grid" type="VBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 10
+[node name="SourceLabel" type="Label" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Grid"]
+layout_mode = 2
+text = "Sprite sheet"
+[node name="GridSheetSelect" type="OptionButton" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Grid"]
+layout_mode = 2
+[node name="SizeRow" type="HBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Grid"]
+layout_mode = 2
+[node name="FrameWidth" type="SpinBox" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Grid/SizeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 1.0
+max_value = 4096.0
+value = 364.0
+prefix = "Frame W  "
+[node name="FrameHeight" type="SpinBox" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Grid/SizeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 1.0
+max_value = 4096.0
+value = 360.0
+prefix = "Frame H  "
+[node name="ApplyGrid" type="Button" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Grid"]
+layout_mode = 2
+text = "Apply grid and detect frames"
+
+[node name="Animations" type="HBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+[node name="ClipColumn" type="VBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations"]
+custom_minimum_size = Vector2(210,0)
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="ClipHeader" type="HBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/ClipColumn"]
+layout_mode = 2
+[node name="Label" type="Label" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/ClipColumn/ClipHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Animations"
+[node name="AddAnimation" type="Button" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/ClipColumn/ClipHeader"]
+layout_mode = 2
+text = "+ Add"
+[node name="AnimationList" type="ItemList" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/ClipColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+custom_minimum_size = Vector2(0, 120)
+auto_height = true
+[node name="DeleteAnimation" type="Button" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/ClipColumn"]
+layout_mode = 2
+text = "Delete selected"
+
+[node name="FrameColumn" type="VBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+[node name="TopRow" type="HBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/FrameColumn"]
+layout_mode = 2
+[node name="SourceSheet" type="OptionButton" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/FrameColumn/TopRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+[node name="AnimationName" type="LineEdit" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/FrameColumn/TopRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "animation name"
+[node name="Fps" type="SpinBox" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/FrameColumn/TopRow"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 60.0
+value = 6.0
+prefix = "FPS "
+[node name="Loop" type="CheckBox" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/FrameColumn/TopRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Loop"
+[node name="FrameScroll" type="ScrollContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/FrameColumn"]
+custom_minimum_size = Vector2(0,300)
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+[node name="FrameGrid" type="GridContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/FrameColumn/FrameScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 4
+[node name="SelectedLabel" type="Label" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/FrameColumn"]
+layout_mode = 2
+text = "Selected frame order"
+[node name="SelectedScroll" type="ScrollContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/FrameColumn"]
+custom_minimum_size = Vector2(0,86)
+layout_mode = 2
+vertical_scroll_mode = 0
+[node name="SelectedStrip" type="HBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/FrameColumn/SelectedScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+[node name="SaveAnimation" type="Button" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/FrameColumn"]
+layout_mode = 2
+text = "Save animation clip"
+
+[node name="License" type="VBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="AuthorLabel" type="Label" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/License"]
+layout_mode = 2
+text = "Creator / artist"
+[node name="AttributionAuthor" type="LineEdit" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/License"]
+unique_name_in_owner = true
+layout_mode = 2
+[node name="LicenseLabel" type="Label" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/License"]
+layout_mode = 2
+text = "License"
+[node name="AttributionLicense" type="LineEdit" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/License"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "CC-BY-4.0"
+
+[node name="Preview" type="VBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+[node name="PreviewControls" type="HBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Preview"]
+layout_mode = 2
+[node name="PreviewClip" type="OptionButton" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Preview/PreviewControls"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+[node name="PlayPreview" type="Button" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Preview/PreviewControls"]
+layout_mode = 2
+text = "▶ Play"
+[node name="PreviewArea" type="Control" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Preview"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0,420)
+layout_mode = 2
+size_flags_vertical = 3
+[node name="PreviewHost" type="Node2D" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Preview/PreviewArea"]
+unique_name_in_owner = true
+
+[node name="Validate" type="VBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack"]
+visible = false
+layout_mode = 2
+[node name="ValidateText" type="Label" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Validate"]
+layout_mode = 2
+text = "Validation details are shown in Package Readiness. Complete required items before building."
+autowrap_mode = 2
+
+[node name="Build" type="VBoxContainer" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack"]
+visible = false
+layout_mode = 2
+[node name="BuildText" type="Label" parent="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Build"]
+layout_mode = 2
+text = "Build locally without signing in. Publishing to the public registry can request login later."
+autowrap_mode = 2
+
+[node name="SummaryCard" type="PanelContainer" parent="Root/Main"]
+custom_minimum_size = Vector2(245,0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("Card")
+[node name="Summary" type="VBoxContainer" parent="Root/Main/SummaryCard"]
+layout_mode = 2
+theme_override_constants/separation = 10
+[node name="Title" type="Label" parent="Root/Main/SummaryCard/Summary"]
+layout_mode = 2
+text = "Package Readiness"
+[node name="ReadinessProgress" type="ProgressBar" parent="Root/Main/SummaryCard/Summary"]
+unique_name_in_owner = true
+layout_mode = 2
+show_percentage = false
+[node name="ReadinessText" type="Label" parent="Root/Main/SummaryCard/Summary"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = "0 / 6 sections ready"
+autowrap_mode = 2
+[node name="Status" type="Label" parent="Root/Main/SummaryCard/Summary"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Ready."
+autowrap_mode = 2
+
+[node name="Footer" type="HBoxContainer" parent="Root"]
+layout_mode = 2
+[node name="BackBtn" type="Button" parent="Root/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "← Previous"
+[node name="Spacer" type="Control" parent="Root/Footer"]
+layout_mode = 2
+size_flags_horizontal = 3
+[node name="NextBtn" type="Button" parent="Root/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Next →"
+[node name="BuildBtn" type="Button" parent="Root/Footer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "Build .ocp package"
+
+[node name="FileDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+file_mode = 1
+access = 2
+filters = PackedStringArray("*.png ; PNG images")
+
+[connection signal="pressed" from="Root/WizardCard/WizardRow/Wizard1" to="." method="_on_wizard_pressed" binds=[1]]
+[connection signal="pressed" from="Root/WizardCard/WizardRow/Wizard2" to="." method="_on_wizard_pressed" binds=[2]]
+[connection signal="pressed" from="Root/WizardCard/WizardRow/Wizard3" to="." method="_on_wizard_pressed" binds=[3]]
+[connection signal="pressed" from="Root/WizardCard/WizardRow/Wizard4" to="." method="_on_wizard_pressed" binds=[4]]
+[connection signal="pressed" from="Root/WizardCard/WizardRow/Wizard5" to="." method="_on_wizard_pressed" binds=[5]]
+[connection signal="pressed" from="Root/WizardCard/WizardRow/Wizard6" to="." method="_on_wizard_pressed" binds=[6]]
+[connection signal="pressed" from="Root/WizardCard/WizardRow/Wizard7" to="." method="_on_wizard_pressed" binds=[7]]
+[connection signal="pressed" from="Root/WizardCard/WizardRow/Wizard8" to="." method="_on_wizard_pressed" binds=[8]]
+[connection signal="pressed" from="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Artwork/ImportBtn" to="." method="_on_import_pressed"]
+[connection signal="item_selected" from="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Artwork/SheetList" to="." method="_on_sheet_selected"]
+[connection signal="item_selected" from="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Artwork/SheetSelect" to="." method="_on_sheet_selected"]
+[connection signal="pressed" from="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Grid/ApplyGrid" to="." method="_on_apply_grid_pressed"]
+[connection signal="pressed" from="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/ClipColumn/ClipHeader/AddAnimation" to="." method="_on_add_animation_pressed"]
+[connection signal="pressed" from="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/ClipColumn/DeleteAnimation" to="." method="_on_delete_animation_pressed"]
+[connection signal="pressed" from="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Animations/FrameColumn/SaveAnimation" to="." method="_on_save_animation_pressed"]
+[connection signal="item_selected" from="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Preview/PreviewControls/PreviewClip" to="." method="_on_preview_clip_selected"]
+[connection signal="pressed" from="Root/Main/WorkspaceCard/Workspace/StepScroll/StepStack/Preview/PreviewControls/PlayPreview" to="." method="_on_preview_play_pressed"]
+[connection signal="pressed" from="Root/Footer/BackBtn" to="." method="_on_back_pressed"]
+[connection signal="pressed" from="Root/Footer/NextBtn" to="." method="_on_next_pressed"]
+[connection signal="pressed" from="Root/Footer/BuildBtn" to="." method="_on_build_pressed"]
+[connection signal="files_selected" from="FileDialog" to="." method="_on_files_selected"]

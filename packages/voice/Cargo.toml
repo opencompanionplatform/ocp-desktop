@@ -1,0 +1,19 @@
+[package]
+name = "ocp-voice"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "I7 Voice V1 slice 4a: the kernel-side speak orchestration. Turns reply text into an `ocp.behavior.speech-requested` envelope by routing a TTS request through the AI Router (audioRef on success), degrading to subtitle-only with no audioRef when TTS is unavailable — never silence. Pure orchestration (router + audio store + event shape), so it's unit-tested without a real voice or the live runtime; the Godot side (playback + real speech-completed) is slice 4b."
+
+[dependencies]
+ocp-llm-router = { path = "../llm-router" }
+ocp-audio-store = { path = "../audio-store" }
+ocp-shared-types = { path = "../shared-types" }
+uuid.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+# Tests construct a real Router (which owns an in-process bus) + the reference
+# tts adapter to exercise the orchestration end to end without a real voice.
+ocp-event-bus = { path = "../event-bus" }

@@ -1,0 +1,46 @@
+[package]
+name = "ocp-plugin-host"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "OCP Plugin Host logic tier: manifest validation, Ed25519 verification, capability grants, lifecycle, quotas (PLUGIN_API, ADR-0007/0011). WASM execution engine lands in a later slice."
+
+[dependencies]
+ocp-shared-types = { path = "../shared-types" }
+ocp-event-bus = { path = "../event-bus" }
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+sha2 = "0.10"
+base64 = "0.22"
+wasmtime = { version = "46.0.3", optional = true }
+wasmtime-wasi = { version = "46.0.3", optional = true }
+# PLUGIN_API §7a (I4): CPU/memory OS sampling only, host-side. Safe API (no
+# `unsafe` needed at any call site), cross-platform (Windows/macOS/Linux),
+# so it stays inside this crate's `#![forbid(unsafe_code)]` (SEC-042) and
+# doesn't threaten CI's 3-OS parity. Battery/foreground/mouse need OS-native
+# APIs this crate deliberately does not add yet (see packages/plugin-host/src/telemetry.rs).
+sysinfo = { version = "0.39", optional = true }
+# PLUGIN_API §7a (I4): battery only. A genuinely separate dependency from
+# `sysinfo` above — sysinfo dropped battery support upstream; this is the
+# ecosystem's replacement. Safe API (no `unsafe` at any call site), keeps
+# this crate's `#![forbid(unsafe_code)]` intact (SEC-042). See
+# packages/plugin-host/src/battery.rs.
+starship-battery = { version = "0.11", optional = true }
+# PLUGIN_API §7a (I4): foreground-window + mouse-idle only. Internal crate,
+# not third-party — isolates the workspace's one audited `unsafe` exception
+# (CODING_STANDARD.md Safety section) so this crate itself stays
+# `#![forbid(unsafe_code)]`. Windows-first (ROADMAP); returns None on other
+# targets, see packages/os-sensors/src/lib.rs.
+ocp-os-sensors = { path = "../os-sensors", optional = true }
+
+[features]
+default = ["engine", "os-telemetry", "battery-telemetry", "foreground-mouse-telemetry"]
+engine = ["dep:wasmtime", "dep:wasmtime-wasi"]
+os-telemetry = ["dep:sysinfo"]
+battery-telemetry = ["dep:starship-battery"]
+foreground-mouse-telemetry = ["dep:ocp-os-sensors"]
+
+[dev-dependencies]
+rand = "0.8"

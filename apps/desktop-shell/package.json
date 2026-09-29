@@ -1,0 +1,110 @@
+{
+  "name": "@ocp/desktop-shell",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Opaque animated desktop application shell for OCP",
+  "author": "Open Companion Platform",
+  "productName": "OCP Desktop",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:renderer": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "dev:electron": "wait-on http://127.0.0.1:5173 && cross-env OCP_SHELL_DEV_URL=http://127.0.0.1:5173 electron .",
+    "build": "npm run build:studio && npm run build:renderer && npm run build:electron",
+    "build:studio": "npm --prefix ../animation-studio/app run build",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "build:signers": "cargo build --release -p ocp-package-signer --manifest-path ../../Cargo.toml --target x86_64-pc-windows-msvc && cargo build --release -p ocp-package-signer --manifest-path ../../Cargo.toml --target aarch64-pc-windows-msvc",
+    "dev:with-studio": "concurrently -k \"npm:dev:renderer\" \"npm:dev:studio\" \"npm:dev:electron-with-studio\"",
+    "dev:studio": "npm --prefix ../animation-studio/app run dev -- --host 127.0.0.1 --port 5174 --strictPort",
+    "dev:electron-with-studio": "wait-on http://127.0.0.1:5173 http://127.0.0.1:5174 && cross-env OCP_SHELL_DEV_URL=http://127.0.0.1:5173 OCP_STUDIO_DEV_URL=http://127.0.0.1:5174 electron .",
+    "typecheck": "tsc -p tsconfig.renderer.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "npm run build && electron .",
+    "package:win": "npm run package:win:x64",
+    "package:win:x64": "npm run build && npm run build:signers && electron-builder --win --dir --x64",
+    "package:win:arm64": "npm run build && npm run build:signers && electron-builder --win --dir --arm64",
+    "dist:win": "npm run dist:win:x64",
+    "dist:win:x64": "npm run build && npm run build:signers && electron-builder --win portable --x64",
+    "dist:win:arm64": "npm run build && npm run build:signers && electron-builder --win portable --arm64"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@assistant-ui/react": "^0.15.17",
+    "@ocp/design-system-core": "file:../../packages/design-system-core",
+    "@eslint/js": "^9.34.0",
+    "lucide-react": "^1.37.0",
+    "motion": "^12.23.12",
+    "pixi.js": "^8.13.2",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "@types/node": "^22.17.2",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.0.2",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.0.0",
+    "electron": "^41.10.3",
+    "electron-builder": "^26.0.12",
+    "eslint": "^9.34.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.41.0",
+    "vite": "^7.1.3",
+    "vitest": "^3.2.4",
+    "wait-on": "^8.0.4"
+  },
+  "build": {
+    "appId": "com.opencompanion.desktop",
+    "productName": "OCP Desktop",
+    "executableName": "OCP",
+    "artifactName": "OCP-Desktop-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "electronLanguages": [
+      "en-US",
+      "th"
+    ],
+    "files": [
+      "dist-electron/**/*",
+      "dist-renderer/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../desktop-runtime/godot/assets/icons/ocp.ico",
+        "to": "assets/ocp.ico"
+      },
+      {
+        "from": "../desktop-runtime/godot/assets/fonts/OFL-NotoSansThai.txt",
+        "to": "licenses/OFL-NotoSansThai.txt"
+      },
+      {
+        "from": "../animation-studio/app/dist",
+        "to": "studio",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../../target/x86_64-pc-windows-msvc/release/ocp-package-signer.exe",
+        "to": "tools/ocp-package-signer-x64.exe"
+      },
+      {
+        "from": "../../target/aarch64-pc-windows-msvc/release/ocp-package-signer.exe",
+        "to": "tools/ocp-package-signer-arm64.exe"
+      }
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "../desktop-runtime/godot/assets/icons/ocp.ico"
+    }
+  }
+}

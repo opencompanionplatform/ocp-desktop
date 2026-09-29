@@ -1,0 +1,22 @@
+[package]
+name = "ocp-activity-context"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "OCP Activity Context Engine (RFC-0005, I11): interprets raw OS/plugin telemetry signals into a canonical, debounced ActivityState, emitted as an ordinary ocp.activity.state-changed event for the Behavior Engine to match like any other Trigger. Zero-LLM in v1 (RFC-0001)."
+
+[dependencies]
+ocp-shared-types = { path = "../shared-types" }
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+# Not a real runtime dependency of this crate (RFC-0005: Activity Context
+# only ever emits an ordinary event; it must not need to know the Behavior
+# Engine exists). Dev-only, for one integration test proving the reverse
+# direction -- that ocp-behavior-engine can consume ocp.activity.state-changed
+# with zero changes to its own contract -- without creating a real coupling.
+ocp-behavior-api = { path = "../behavior-api" }
+ocp-behavior-engine = { path = "../behavior-engine" }

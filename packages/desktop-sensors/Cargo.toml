@@ -1,0 +1,13 @@
+[package]
+name = "ocp-desktop-sensors"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/opencompanionplatform/ocp-desktop"
+
+[dependencies]
+chrono.workspace = true
+ocp-desktop-world = { path = "../desktop-world" }
+ocp-os-sensors = { path = "../os-sensors" }
+ocp-shared-types = { path = "../shared-types" }
+serde.workspace = true

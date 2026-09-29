@@ -1,0 +1,29 @@
+[package]
+name = "ocp-native-companion-window-spike"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "ocp_native_companion_window_spike"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ocp-native-companion-window-spike"
+path = "src/main.rs"
+
+[dependencies]
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Ole",
+    "Win32_System_Variant",
+    "Win32_UI_Shell_PropertiesSystem",
+] }
+windows-numerics = "0.3.1"
+resvg = "0.45"

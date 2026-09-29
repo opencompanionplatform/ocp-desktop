@@ -1,0 +1,8 @@
+{
+  "keyId": "ed25519:beta-root-54d72256e30a7ba548eed1d7221de829e245e93fb385e683dead45543debf54d",
+  "publicKeyHex": "a656564f1dffa63f15c056668a146f70ad7ee96e60af3b1f32bce06c7ecee84c",
+  "trustDomain": "local-beta",
+  "custody": "single-owner",
+  "issuedAt": 1788515089,
+  "expiresAt": 1796291089
+}

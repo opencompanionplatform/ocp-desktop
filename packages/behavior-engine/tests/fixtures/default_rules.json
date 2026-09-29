@@ -1,0 +1,20 @@
+{
+  "rules": [
+    {
+      "id": "greet-on-input",
+      "trigger": "ocp.runtime.input-captured",
+      "priority": 0,
+      "emotionTo": "happy",
+      "behaviorId": "greet"
+    }
+  ],
+  "behaviors": {
+    "greet": {
+      "id": "greet",
+      "actions": [
+        { "kind": "bubble", "text": "hi!", "tone": "happy" },
+        { "kind": "animation", "animation_id": "wave", "looped": false, "priority": "reactive", "blend_ms": 150 }
+      ]
+    }
+  }
+}

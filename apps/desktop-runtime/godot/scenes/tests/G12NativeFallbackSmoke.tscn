@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/runtime_v3/tests/g12_native_fallback_smoke.gd" id="1_g12"]
+
+[node name="G12NativeFallbackSmoke" type="Node"]
+script = ExtResource("1_g12")

@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/runtime_v3/tests/g11_native_presentation_contract_smoke.gd" id="1_g11"]
+
+[node name="G11NativePresentationContractSmoke" type="Node"]
+script = ExtResource("1_g11")

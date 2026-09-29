@@ -1,0 +1,17 @@
+[package]
+name = "ocp-ipc"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "OCP IPC bridge tier (ADR-0005 tier 2): length-prefixed JSON envelope frames, SEC-040 token handshake, SEC-041 boundary validation"
+
+[dependencies]
+ocp-shared-types = { path = "../shared-types" }
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+# Cross-platform local sockets (UDS / Windows named pipe) — CODING_STANDARD dep policy.
+interprocess = "2"
+
+[target.'cfg(windows)'.dependencies]
+widestring = "1"

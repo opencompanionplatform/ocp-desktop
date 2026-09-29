@@ -1,0 +1,12 @@
+[package]
+name = "ocp-plugin-sdk"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "OCP Plugin SDK alpha: safe guest-side bindings for PLUGIN_ABI v1. Compiles to wasm32-wasip1; depends on nothing in the kernel (SEC-001 boundary)."
+
+# Deliberately zero deps: the SDK must not pull kernel internals into the guest.
+[dependencies]
+
+[lib]
+crate-type = ["rlib"]

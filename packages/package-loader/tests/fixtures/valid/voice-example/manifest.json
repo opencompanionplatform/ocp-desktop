@@ -1,0 +1,24 @@
+{
+  "manifestVersion": "0.1",
+  "id": "voice.example",
+  "type": "voice",
+  "version": "1.0.0",
+  "publisher": {
+    "id": "ocp.example",
+    "keyId": "ed25519:test-1"
+  },
+  "license": "Apache-2.0",
+  "entry": "assets/main.json",
+  "assets": [
+    {
+      "path": "assets/main.json",
+      "sha256": "e0b27f345b21fcfe7d0ba24493402f562dd5a5c2cda31733a8fe246f6f8680ff"
+    }
+  ],
+  "signature": {
+    "algorithm": "ed25519",
+    "keyId": "ed25519:test-1",
+    "digest": "sha256:36889db7ccb09ca3f36e214d7c670c0aaca5a0eafb3502e7fa918f35507bdcc0",
+    "value": "base64:zf97rxNrOkSxbuJ3PWR+vFoNzMjpyvJyKGSg24fHdPX0rD3Mtnfiqv1FG3ZKitJd9+fgeisGfiHB6G+6/yYFBg=="
+  }
+}

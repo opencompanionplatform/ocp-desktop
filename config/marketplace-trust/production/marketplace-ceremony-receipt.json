@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "decisionSha256": "1685522083843eff07f8793d5568c551559aa437c63850e31290fc79d6acd889",
+  "custody": "offline-root",
+  "trustDomain": "marketplace-release",
+  "operatorConfirmedOffline": true,
+  "issuedAt": 1788668603,
+  "rootFingerprint": "ea7764bd3e907eda74a3dbbb2b3e386c984675854cbf77c3698b46e8090877b7",
+  "publisherId": "ocp.official",
+  "publisherKeyId": "ed25519:ocp-official-8624ea86710baaded5eedd08",
+  "publisherPublicKeyFingerprint": "8624ea86710baaded5eedd08664dcd6369fd1aa74f231c0c2bc2d52fa6ced6cd",
+  "revocationSequence": 1
+}

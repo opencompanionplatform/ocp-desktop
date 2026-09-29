@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/runtime_v3/tests/g10_native_godot_embed_smoke.gd" id="1_g10"]
+
+[node name="G10NativeGodotEmbedSmoke" type="Node"]
+script = ExtResource("1_g10")

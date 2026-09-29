@@ -1,0 +1,274 @@
+[CmdletBinding()]
+param(
+    [string]$RuntimeRoot = ".",
+
+    [string]$GodotExe = "C:\Godot_v4.7.1-stable_windows_arm64\Godot_v4.7.1-stable_windows_arm64.exe",
+
+    [ValidateSet("arm64", "x86_64")]
+    [string]$Arch = "arm64",
+
+    [ValidateSet("debug", "release")]
+    [string]$Profile = "debug",
+
+    [switch]$SkipSingleInstance,
+
+    [switch]$LaunchAfterPass
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$root = [System.IO.Path]::GetFullPath($RuntimeRoot)
+$runner = Join-Path $root "run_install_poc.ps1"
+$runtimeRunner = Join-Path $root "run_ocp_runtime.ps1"
+$singleInstanceTest = Join-Path $root "test_runtime_v3_single_instance.ps1"
+$reportDir = Join-Path $root "artifacts\release-gate"
+$timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$reportFile = Join-Path $reportDir "runtime-v3-release-gate-$timestamp.md"
+
+function Require-File {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Description
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "$Description not found: $Path"
+    }
+}
+
+function Invoke-PowerShellScript {
+    param(
+        [Parameter(Mandatory = $true)][string]$ScriptPath,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$Description
+    )
+
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor DarkCyan
+    Write-Host " $Description" -ForegroundColor Cyan
+    Write-Host "============================================================" -ForegroundColor DarkCyan
+
+    $processArguments = @(
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        $ScriptPath
+    )
+
+    $processArguments += $Arguments
+
+    $process = Start-Process `
+        -FilePath "powershell.exe" `
+        -ArgumentList $processArguments `
+        -Wait `
+        -PassThru `
+        -NoNewWindow
+
+    if ($null -eq $process.ExitCode) {
+        throw "$Description did not return an exit code."
+    }
+
+    if ($process.ExitCode -ne 0) {
+        throw "$Description failed with exit code $($process.ExitCode)."
+    }
+}
+
+Require-File $runner "Production runtime runner"
+Require-File $GodotExe "Godot executable"
+
+New-Item -ItemType Directory -Force -Path $reportDir |
+    Out-Null
+
+$results = New-Object System.Collections.Generic.List[object]
+$startedAt = Get-Date
+
+function Run-GateStep {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][scriptblock]$Action
+    )
+
+    $stepStarted = Get-Date
+
+    try {
+        & $Action
+
+        $duration = (Get-Date) - $stepStarted
+
+        $results.Add([pscustomobject]@{
+            Step = $Name
+            Status = "PASS"
+            DurationSeconds = [math]::Round($duration.TotalSeconds, 2)
+            Error = ""
+        })
+
+        Write-Host "[PASS] $Name" -ForegroundColor Green
+    }
+    catch {
+        $duration = (Get-Date) - $stepStarted
+
+        $results.Add([pscustomobject]@{
+            Step = $Name
+            Status = "FAIL"
+            DurationSeconds = [math]::Round($duration.TotalSeconds, 2)
+            Error = $_.Exception.Message
+        })
+
+        Write-Host "[FAIL] $Name" -ForegroundColor Red
+        throw
+    }
+}
+
+$gatePassed = $false
+
+try {
+    Get-Process Godot*,cs_rt_live* -ErrorAction SilentlyContinue |
+        Stop-Process -Force
+
+    Run-GateStep "Build GDExtension" {
+        Invoke-PowerShellScript `
+            -ScriptPath $runner `
+            -Description "Build GDExtension" `
+            -Arguments @(
+                "-Action", "Build",
+                "-GodotExe", $GodotExe,
+                "-Arch", $Arch,
+                "-Profile", $Profile
+            )
+    }
+
+    Run-GateStep "CS-RT Conformance" {
+        Invoke-PowerShellScript `
+            -ScriptPath $runner `
+            -Description "CS-RT Conformance" `
+            -Arguments @(
+                "-Action", "Conformance",
+                "-GodotExe", $GodotExe,
+                "-Arch", $Arch,
+                "-Profile", $Profile
+            )
+    }
+
+    Run-GateStep "Package Layer" {
+        Invoke-PowerShellScript `
+            -ScriptPath $runner `
+            -Description "Package Layer Test" `
+            -Arguments @(
+                "-Action", "TestPackageLayer",
+                "-GodotExe", $GodotExe
+            )
+    }
+
+    Run-GateStep "Runtime V3 Tests" {
+        Invoke-PowerShellScript `
+            -ScriptPath $runner `
+            -Description "Runtime V3 Test Suite" `
+            -Arguments @(
+                "-Action", "TestV3",
+                "-GodotExe", $GodotExe
+            )
+    }
+
+    if (-not $SkipSingleInstance) {
+        if (Test-Path -LiteralPath $runtimeRunner -PathType Leaf) {
+            Run-GateStep "Single Instance" {
+                Invoke-PowerShellScript `
+                    -ScriptPath $runtimeRunner `
+                    -Description "Single Instance Test" `
+                    -Arguments @(
+                        "-Action", "TestSingleInstance",
+                        "-GodotExe", $GodotExe
+                    )
+            }
+        }
+        elseif (Test-Path -LiteralPath $singleInstanceTest -PathType Leaf) {
+            Run-GateStep "Single Instance" {
+                Invoke-PowerShellScript `
+                    -ScriptPath $singleInstanceTest `
+                    -Description "Single Instance Test" `
+                    -Arguments @(
+                        "-GodotExe", $GodotExe
+                    )
+            }
+        }
+        else {
+            throw "No Single Instance test runner was found."
+        }
+    }
+
+    $gatePassed = true
+}
+finally {
+    $finishedAt = Get-Date
+    $overall = if ($gatePassed) { "PASS" } else { "FAIL" }
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add("# Runtime V3 Release Gate")
+    $lines.Add("")
+    $lines.Add("- Result: **$overall**")
+    $lines.Add("- Started: $($startedAt.ToString('s'))")
+    $lines.Add("- Finished: $($finishedAt.ToString('s'))")
+    $lines.Add("- Architecture: $Arch")
+    $lines.Add("- Profile: $Profile")
+    $lines.Add("- Godot: $GodotExe")
+    $lines.Add("")
+    $lines.Add("| Step | Status | Seconds | Error |")
+    $lines.Add("|---|---:|---:|---|")
+
+    foreach ($result in $results) {
+        $safeError = $result.Error.Replace("|", "\|")
+        $lines.Add(
+            "| $($result.Step) | $($result.Status) | $($result.DurationSeconds) | $safeError |"
+        )
+    }
+
+    $lines.Add("")
+    $lines.Add("## Production route")
+    $lines.Add("")
+    $lines.Add('`run_install_poc.ps1 -Action Run -StartupMode overlay`')
+    $lines.Add("")
+    $lines.Add("## Required manual checks")
+    $lines.Add("")
+    $lines.Add("- [ ] Transparent overlay")
+    $lines.Add("- [ ] Active character loads")
+    $lines.Add("- [ ] Character switching")
+    $lines.Add("- [ ] Hover menu")
+    $lines.Add("- [ ] Drag")
+    $lines.Add("- [ ] Bubble")
+    $lines.Add("- [ ] Quick Panel")
+    $lines.Add("- [ ] Tray hide/restore")
+    $lines.Add("- [ ] Exit leaves no process")
+
+    $encoding = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllLines(
+        $reportFile,
+        $lines,
+        $encoding
+    )
+
+    Write-Host ""
+    Write-Host "Release report:" -ForegroundColor Cyan
+    Write-Host "  $reportFile"
+}
+
+if (-not $gatePassed) {
+    exit 1
+}
+
+Write-Host ""
+Write-Host "============================================================" -ForegroundColor DarkGreen
+Write-Host " Runtime V3 RELEASE GATE PASSED" -ForegroundColor Green
+Write-Host "============================================================" -ForegroundColor DarkGreen
+
+if ($LaunchAfterPass) {
+    Invoke-PowerShellScript `
+        -ScriptPath $runner `
+        -Description "Launch Runtime V3 Production" `
+        -Arguments @(
+            "-Action", "Run",
+            "-GodotExe", $GodotExe,
+            "-StartupMode", "overlay"
+        )
+}

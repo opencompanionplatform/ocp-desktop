@@ -1,0 +1,61 @@
+[package]
+name = "ocp-memory"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "OCP Memory Layer (I6): the only interface through which any component writes, recalls, lists, deletes, exports, or purges memory (MEMORY_API). Scope enforcement, retention, and the SEC-021 deletion cascade all live inside this crate, never in callers."
+
+[dependencies]
+ocp-shared-types = { path = "../shared-types" }
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+# ADR-0010's default backend, now with ADR-0012 encryption at rest.
+# "bundled-sqlcipher-vendored-openssl" compiles SQLCipher (SQLite + full-
+# database page encryption) from source AND vendors OpenSSL, so no system
+# SQLite or system OpenSSL is required. A SQLCipher-compiled SQLite still
+# opens an *unkeyed* database as ordinary plaintext SQLite, so the existing
+# `open`/`open_in_memory` (no PRAGMA key) paths and every plaintext test are
+# unchanged; encryption only engages once `PRAGMA key` is set
+# (`open_encrypted`/`open_profile`).
+#
+# BUILD RISK, flagged not assumed away (same discipline as `ring`'s clang
+# requirement in I5 and the original `cl.exe` note this replaces): vendoring
+# OpenSSL compiles it from source, which needs Perl (and, on some targets,
+# NASM) on PATH in addition to the MSVC C compiler already required by the
+# previous `bundled`. On this Windows ARM64 (aarch64-pc-windows-msvc) machine
+# this is UNVERIFIED until the first native build. If the vendored-OpenSSL
+# build fails here, the fallbacks in preference order are: (a) switch to
+# `bundled-sqlcipher` and point the build at a prebuilt OpenSSL via
+# `OPENSSL_DIR`/`vcpkg`; (b) install Perl+NASM and retry vendoring. ADR-0012
+# commits to SQLCipher-class encryption specifically, so — unlike I5's TLS
+# `rustls`->`native-tls` swap — there is no non-SQLCipher backend to fall
+# back to; only the OpenSSL-sourcing method is negotiable, not the cipher.
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
+# ADR-0010 vector search: sqlite-vec's `vec_distance_cosine`, made available on
+# every SqliteStore connection via ocp-sqlite-vec's safe `register()` (the one
+# scoped-unsafe boundary — keeps this crate `forbid(unsafe_code)`). Spike-proven
+# to build + register + rank on this Windows ARM64 + SQLCipher toolchain
+# (packages/ocp-sqlite-vec/tests/spike.rs) before wiring it in here.
+ocp-sqlite-vec = { path = "../ocp-sqlite-vec" }
+# ADR-0012 key wrapping: the per-profile database key lives in the OS keystore
+# (DPAPI / Keychain / Secret Service), exactly as ADR-0012's key-management
+# paragraph specifies and via the SAME `keyring` v1 API I5's
+# `OsKeystoreCredentialStore` already proved live against real Windows
+# Credential Manager entries (SEC-030). `v1` must be requested explicitly (the
+# default build enables neither `v1` nor `cli`). No unsafe enters this crate.
+keyring = { version = "4", features = ["v1"] }
+# ADR-0012 key generation: the random 256-bit per-profile key comes from the
+# OS CSPRNG. `getrandom` is the minimal correct source (what `uuid`/`rand`
+# draw from under the hood); a UUID's 122 random bits are not a 256-bit key.
+getrandom = "0.2"
+# ADR-0012 ("the plaintext key exists only in Memory Layer process memory"):
+# `SqliteKey` is ZeroizeOnDrop so key bytes don't linger after a store closes.
+zeroize = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+# Real on-disk files for the PDD-required forensic deletion test (grep the
+# DB file + WAL) -- already present in the workspace's own dependency tree
+# (pulled in transitively elsewhere), not a new dependency footprint.
+tempfile = "3"

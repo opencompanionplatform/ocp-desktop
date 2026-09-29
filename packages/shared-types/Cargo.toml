@@ -1,0 +1,12 @@
+[package]
+name = "ocp-shared-types"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "OCP event envelope and shared types (EVENT_API contract)"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true

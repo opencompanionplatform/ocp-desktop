@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "decisionSha256": "d3487d5b8c05f81803cfc6a936eb96c665fadbb551076d30cf165beab96a2e70",
+  "custody": "single-owner",
+  "trustDomain": "local-beta",
+  "operatorConfirmedOffline": true,
+  "issuedAt": 1788515089,
+  "rootFingerprint": "54d72256e30a7ba548eed1d7221de829e245e93fb385e683dead45543debf54d",
+  "publisherRequestSha256": "dda4d2404641b823fe9e888c3497f539fb785945d41888158e59c0848c9929ad"
+}

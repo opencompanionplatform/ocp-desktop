@@ -1,0 +1,432 @@
+[gd_scene load_steps=14 format=3]
+
+[ext_resource type="Script" path="res://scripts/runtime_v3/runtime_app.gd" id="1_app"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/ui/runtime_ui.gd" id="2_ui"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/ui/debug_overlay.gd" id="3_debug"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/ui/performance_overlay.gd" id="4_perf"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/controllers/startup_visibility_controller.gd" id="5_startup_visibility"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/controllers/bubble_anchor_controller.gd" id="6_bubble_anchor"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/ui/runtime_geometry_debug_overlay.gd" id="7_geometry_debug"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/controllers/hover_lifecycle_controller.gd" id="8_hover_lifecycle"]
+[ext_resource type="Script" path="res://scripts/runtime_v3/ui/desktop_world_debug_overlay.gd" id="9_world_debug"]
+
+[sub_resource type="StyleBoxFlat" id="panel_style"]
+bg_color = Color(0.035, 0.065, 0.12, 0.96)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.18, 0.42, 0.78, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[sub_resource type="StyleBoxFlat" id="composer_style"]
+bg_color = Color(0.055, 0.075, 0.12, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.22, 0.42, 0.7, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[sub_resource type="StyleBoxFlat" id="chat_transcript_style"]
+bg_color = Color(0.025, 0.04, 0.075, 0.72)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.1, 0.2, 0.36, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[sub_resource type="StyleBoxFlat" id="assistant_card_style"]
+bg_color = Color(0.055, 0.09, 0.16, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.16, 0.34, 0.58, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+shadow_color = Color(0, 0, 0, 0.24)
+shadow_size = 4
+content_margin_left = 14.0
+content_margin_top = 12.0
+content_margin_right = 14.0
+content_margin_bottom = 12.0
+
+[sub_resource type="StyleBoxFlat" id="settings_field_style"]
+bg_color = Color(0.045, 0.075, 0.14, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.15, 0.32, 0.58, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+content_margin_left = 14.0
+content_margin_top = 10.0
+content_margin_right = 14.0
+content_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxFlat" id="settings_button_style"]
+bg_color = Color(0.12, 0.38, 0.78, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.35, 0.68, 1, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+content_margin_left = 18.0
+content_margin_top = 12.0
+content_margin_right = 18.0
+content_margin_bottom = 12.0
+
+[sub_resource type="StyleBoxFlat" id="settings_button_hover_style"]
+bg_color = Color(0.18, 0.5, 0.95, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.55, 0.8, 1, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+content_margin_left = 18.0
+content_margin_top = 12.0
+content_margin_right = 18.0
+content_margin_bottom = 12.0
+
+[node name="RuntimeApp" type="Node"]
+script = ExtResource("1_app")
+
+[node name="OcpRuntimeBridge" type="OcpRuntimeBridge" parent="."]
+
+[node name="RuntimeBootstrap" type="Node" parent="."]
+unique_name_in_owner = true
+
+[node name="RuntimeContext" type="Node" parent="."]
+unique_name_in_owner = true
+
+[node name="RuntimeStateMachine" type="Node" parent="."]
+unique_name_in_owner = true
+
+[node name="RuntimeEventBus" type="Node" parent="."]
+unique_name_in_owner = true
+
+[node name="RuntimeServices" type="Node" parent="."]
+unique_name_in_owner = true
+
+[node name="StartupVisibilityController" type="Node" parent="RuntimeServices"]
+unique_name_in_owner = true
+script = ExtResource("5_startup_visibility")
+
+[node name="Controllers" type="Node" parent="."]
+unique_name_in_owner = true
+
+[node name="BubbleAnchorController" type="Node" parent="Controllers"]
+unique_name_in_owner = true
+script = ExtResource("6_bubble_anchor")
+
+[node name="HoverLifecycleController" type="Node" parent="Controllers"]
+unique_name_in_owner = true
+script = ExtResource("8_hover_lifecycle")
+
+[node name="RuntimeSDK" type="Node" parent="."]
+unique_name_in_owner = true
+
+[node name="RuntimeUI" type="Node" parent="."]
+unique_name_in_owner = true
+script = ExtResource("2_ui")
+
+[node name="Background" type="ColorRect" parent="RuntimeUI"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0 
+color = Color(0.025, 0.03, 0.04, 1)
+mouse_filter = 2
+
+[node name="StatusBar" type="HBoxContainer" parent="RuntimeUI"]
+unique_name_in_owner = true
+visible = false
+offset_left = 16.0
+offset_top = 12.0
+offset_right = 760.0
+offset_bottom = 52.0
+
+[node name="StatusLabel" type="Label" parent="RuntimeUI/StatusBar"]
+unique_name_in_owner = true
+text = "Runtime V3 starting..."
+size_flags_horizontal = 3
+
+[node name="OverlayModeButton" type="Button" parent="RuntimeUI/StatusBar"]
+unique_name_in_owner = true
+text = "Mode: Debug Window"
+
+[node name="WorldDebugButton" type="Button" parent="RuntimeUI/StatusBar"]
+unique_name_in_owner = true
+text = "World Debug [F9]"
+
+[node name="CompanionLayer" type="Control" parent="RuntimeUI"]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="CompanionHost" type="Control" parent="RuntimeUI/CompanionLayer"]
+unique_name_in_owner = true
+offset_left = 500.0
+offset_top = 300.0
+offset_right = 808.0
+offset_bottom = 608.0
+mouse_filter = 2
+
+[node name="CompanionSprite" type="AnimatedSprite2D" parent="RuntimeUI/CompanionLayer/CompanionHost"]
+unique_name_in_owner = true
+position = Vector2(154, 154)
+visible = false
+
+[node name="BubbleLayer" type="Control" parent="RuntimeUI"]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="BubblePanel" type="PanelContainer" parent="RuntimeUI/BubbleLayer"]
+unique_name_in_owner = true
+offset_left = 480.0
+offset_top = 190.0
+offset_right = 820.0
+offset_bottom = 275.0
+visible = false
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="BubbleLabel" type="Label" parent="RuntimeUI/BubbleLayer/BubblePanel"]
+unique_name_in_owner = true
+text = "Bubble"
+autowrap_mode = 3
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="HoverMenu" type="PanelContainer" parent="RuntimeUI"]
+unique_name_in_owner = true
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 260.0
+offset_bottom = 360.0
+visible = false
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="Buttons" type="VBoxContainer" parent="RuntimeUI/HoverMenu"]
+theme_override_constants/separation = 6
+
+[node name="OpenQuickPanelButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "OCP Quick Panel"
+
+[node name="HoverSoundButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+disabled = true
+text = "🔊 Sound"
+
+[node name="HoverMuteAllButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "Mute All"
+
+[node name="HoverSfxButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "SFX: On"
+
+[node name="HoverVoiceButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "🗣 Voice"
+
+[node name="WaveButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "Wave"
+
+[node name="BubbleTestButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "Bubble Test"
+
+[node name="ChangeCharacterButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "Change Character"
+
+[node name="HoverHideToTrayButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "Hide to Tray"
+
+[node name="HoverExitButton" type="Button" parent="RuntimeUI/HoverMenu/Buttons"]
+unique_name_in_owner = true
+text = "Exit"
+
+[node name="ContextMenu" type="PanelContainer" parent="RuntimeUI"]
+unique_name_in_owner = true
+offset_left = 780.0
+offset_top = 500.0
+offset_right = 1040.0
+offset_bottom = 680.0
+visible = false
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="QuickPanel" type="PanelContainer" parent="RuntimeUI"]
+unique_name_in_owner = true
+offset_left = 18.0
+offset_top = 18.0
+offset_right = 366.0
+offset_bottom = 366.0
+visible = false
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="QuickVBox" type="VBoxContainer" parent="RuntimeUI/QuickPanel"]
+theme_override_constants/separation = 8
+
+[node name="QuickPanelDragHandle" type="PanelContainer" parent="RuntimeUI/QuickPanel/QuickVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 42)
+mouse_default_cursor_shape = 6
+
+[node name="Title" type="Label" parent="RuntimeUI/QuickPanel/QuickVBox/QuickPanelDragHandle"]
+text = "OCP Quick Panel — drag here"
+horizontal_alignment = 1
+vertical_alignment = 1
+mouse_filter = 2
+
+[node name="CloseQuickPanelButton" type="Button" parent="RuntimeUI/QuickPanel/QuickVBox"]
+unique_name_in_owner = true
+text = "Close"
+
+[node name="HideToTrayButton" type="Button" parent="RuntimeUI/QuickPanel/QuickVBox"]
+unique_name_in_owner = true
+visible = false
+text = "Hide to Tray"
+
+[node name="AnimationTitle" type="Label" parent="RuntimeUI/QuickPanel/QuickVBox"]
+text = "Animations"
+
+[node name="AnimationScroll" type="ScrollContainer" parent="RuntimeUI/QuickPanel/QuickVBox"]
+custom_minimum_size = Vector2(320, 220)
+size_flags_vertical = 3
+
+[node name="AnimationList" type="VBoxContainer" parent="RuntimeUI/QuickPanel/QuickVBox/AnimationScroll"]
+unique_name_in_owner = true
+size_flags_horizontal = 3
+
+[node name="DesktopWorldDebugOverlay" type="Control" parent="RuntimeUI"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("9_world_debug")
+
+[node name="GeometryDebugOverlay" type="Control" parent="RuntimeUI"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("7_geometry_debug")
+
+[node name="DebugOverlay" type="CanvasLayer" parent="RuntimeUI"]
+unique_name_in_owner = true
+script = ExtResource("3_debug")
+
+[node name="PerformanceOverlay" type="CanvasLayer" parent="RuntimeUI"]
+unique_name_in_owner = true
+script = ExtResource("4_perf")
+
+[node name="NotificationPanel" type="PanelContainer" parent="RuntimeUI"]
+unique_name_in_owner = true
+offset_left = 440.0
+offset_top = 64.0
+offset_right = 840.0
+offset_bottom = 124.0
+visible = false
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="NotificationLabel" type="Label" parent="RuntimeUI/NotificationPanel"]
+unique_name_in_owner = true
+text = "Notification"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
+
+[node name="SoundPlayer" type="AudioStreamPlayer" parent="RuntimeUI"]
+unique_name_in_owner = true
+
+
+[node name="StartupLayer" type="CanvasLayer" parent="RuntimeUI"] 
+visible = false
+unique_name_in_owner = true
+layer = 2000
+
+[node name="Backdrop" type="ColorRect" parent="RuntimeUI/StartupLayer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0)
+mouse_filter = 2
+
+[node name="Center" type="CenterContainer" parent="RuntimeUI/StartupLayer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="Panel" type="PanelContainer" parent="RuntimeUI/StartupLayer/Center"]
+custom_minimum_size = Vector2(440, 180)
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="VBox" type="VBoxContainer" parent="RuntimeUI/StartupLayer/Center/Panel"]
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="Title" type="Label" parent="RuntimeUI/StartupLayer/Center/Panel/VBox"]
+text = "OCP Desktop Runtime"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 28
+
+[node name="StartupStatusLabel" type="Label" parent="RuntimeUI/StartupLayer/Center/Panel/VBox"]
+unique_name_in_owner = true
+text = "Loading active character..."
+horizontal_alignment = 1
+
+[node name="Hint" type="Label" parent="RuntimeUI/StartupLayer/Center/Panel/VBox"]
+text = "Runtime V3"
+horizontal_alignment = 1
+modulate = Color(1, 1, 1, 0.65)
+

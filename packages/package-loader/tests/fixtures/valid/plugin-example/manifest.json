@@ -1,0 +1,24 @@
+{
+  "manifestVersion": "0.1",
+  "id": "plugin.example",
+  "type": "plugin",
+  "version": "1.0.0",
+  "publisher": {
+    "id": "ocp.example",
+    "keyId": "ed25519:test-1"
+  },
+  "license": "Apache-2.0",
+  "entry": "assets/main.json",
+  "assets": [
+    {
+      "path": "assets/main.json",
+      "sha256": "c8f10db78d1a1bf501ca85b1a89338111c430da905835b3ee24d54112b67f31c"
+    }
+  ],
+  "signature": {
+    "algorithm": "ed25519",
+    "keyId": "ed25519:test-1",
+    "digest": "sha256:20417ccfbef495f34ef93d30e612c711bcb28a0801efae1afe00ec119bb6021e",
+    "value": "base64:fc3yTefcXl6dqTPO2oFL/Yy/4ntx2CltD8bPKnkYYIepSfsvhg+hML6GzMat6INakMGmfmhIptLLEqnvfvctBA=="
+  }
+}

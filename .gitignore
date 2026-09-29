@@ -1,0 +1,102 @@
+# Rust build artifacts
+/target
+**/target
+*.wasm
+
+# Spike scratch output (docs/WASI_SPIKE.md) — the report lives in ocp-docs
+spike/sandbox/
+spike/outside/
+spike/spike_results.txt
+# examples/*_tts_live.rs write a scratch clip to the repo root when run
+/gemini_thai.wav
+/openai_thai.wav
+
+# Godot editor cache + staged GDExtension binaries (rebuilt by build.ps1)
+apps/desktop-runtime/godot/.godot/
+apps/desktop-runtime/godot/bin/
+apps/desktop-runtime/godot/**/*.import
+apps/desktop-runtime/godot/*.log
+# run_cs_rt.ps1 / run_cs_rt.sh scratch logs
+apps/desktop-runtime/*.log
+# Cargo.lock is committed (reproducible CI + cargo-audit) — do not ignore
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*~
+
+# JavaScript / web generated dependencies and build output
+/supabase/.temp/
+/examples/out/
+/ocp-platform/
+/cloud_r2_cors.local.json
+*.ocp
+**/node_modules/
+**/dist/
+**/.vite/
+**/coverage/
+*.tsbuildinfo
+
+# Local acceptance artifacts, backup snapshots, and obsolete scratch copies
+/artifacts/
+/$null
+/apps/bk/
+/apps/desktop-runtime/artifacts/
+/apps/desktop-runtime/_archive/
+/apps/desktop-runtime/_recovery/*-20*/
+**/*.before-fix
+**/*.corrupt-backup
+**/*.encoding-backup-*
+**/*.phase*-backup
+**/*.backup-before-*
+
+# Local assistant / deployment caches and scratch files
+/.serena/
+**/.wrangler/
+**/*.log
+**/*.log.*
+**/.tmp*
+**/__pycache__/
+**/*.pyc
+/_noop.tmp
+
+# Local env / secrets (SEC-030: no credentials in repo, ever)
+.env
+.env.*
+!**/.env.example
+!**/.env.sample
+*.pem
+*.key
+*.p8
+*.p12
+*.seed
+*.der
+*.b64
+/release/secrets/
+
+# Local application-release assembly output
+/release/out/
+/release/offline-trust-*.zip
+
+# Local runtime and release acceptance output (recreated by test commands).
+/.test-user-data/
+/_recovery/
+/g*_*.log
+/g*_*.log.*
+/runtime_v3_test*.log
+/release/test-poc*/
+/release/build-poc*.log
+/**/ocp-platform.sbom.json
+/**/ocp-platform.sbom.xml
+
+# Local character authoring assets and generated .ocp packages stay off Git.
+# Publish reviewed packages through OCP Store/Cloud release storage instead.
+/apps/desktop-runtime/poc-assets/
+# Local embedded-starter intake. Release/CI receives the reviewed Bible package as an external artifact.
+/release/starter-local/

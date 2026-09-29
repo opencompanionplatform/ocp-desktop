@@ -1,0 +1,11 @@
+[package]
+name = "ocp-desktop-world"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+[dependencies]
+chrono.workspace = true
+ocp-shared-types = { path = "../shared-types" }
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true

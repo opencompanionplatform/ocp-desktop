@@ -1,0 +1,8 @@
+feat(creator-sdk): add generic OCP character builder
+
+- drive package generation from character.build.json
+- support the standard 15 character animations and migration aliases
+- remove chroma backgrounds with per-frame corner flood fill
+- preserve real frame counts for 4, 6, and 8-frame animations
+- generate character metadata, SHA-256 manifest, and normalized OCP archives
+- add source validation and workspace initialization scripts

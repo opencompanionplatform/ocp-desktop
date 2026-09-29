@@ -1,0 +1,10 @@
+[package]
+name = "ocp-os-tts"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "I7 Voice V1 slice 3: the OS-voice `tts` synthesizer. On Windows it drives System.Speech.Synthesis (built into every Windows) to render text to a WAV byte buffer, headless (writes a temp file, never the speakers). A safe boundary the router's tts adapter calls — no WinRT/COM/unsafe. The `wav_duration_ms` parser is platform-independent and unit-tested on its own."
+
+[dependencies]
+# Unique temp-file names for the headless WAV render.
+uuid.workspace = true

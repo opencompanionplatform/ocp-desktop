@@ -1,0 +1,15 @@
+[package]
+name = "ocp-os-sensors"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Foreground-window and mouse-idle OS queries (PLUGIN_API §7a, I4). The one crate in this workspace that permits unsafe code -- audited exception, see CODING_STANDARD.md Safety section. Windows-first (ROADMAP); returns None on other targets so cross-platform CI stays green."
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_SystemInformation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }

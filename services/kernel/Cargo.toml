@@ -1,0 +1,57 @@
+[package]
+name = "ocp-kernel"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "OCP Native Core Service — I2 walking-skeleton binary: binds the runtime IPC socket, drives the RUNTIME_API verbs interactively, logs outcome facts"
+# The package ships two bins (the kernel + the cs_rt_live harness); name the
+# kernel the default so `cargo run -p ocp-kernel` is unambiguous.
+default-run = "ocp-kernel"
+
+[dependencies]
+ocp-shared-types = { path = "../../packages/shared-types" }
+ocp-ipc = { path = "../../packages/ipc" }
+ocp-behavior-api = { path = "../../packages/behavior-api" }
+ocp-behavior-engine = { path = "../../packages/behavior-engine" }
+# Kernel-integration slice (post-I6.5): the components proven at library
+# level finally run inside one process.
+ocp-companion-manager = { path = "../../packages/companion-manager" }
+ocp-activity-context = { path = "../../packages/activity-context" }
+ocp-os-sensors = { path = "../../packages/os-sensors" }
+# I7 Voice V1 kernel AI slice: the kernel finally HOSTS the AI Router (the
+# "kernel doesn't host the router" gap flagged since I4). `/speech` now routes a
+# TTS request through the router's real OS voice, mirrors the WAV to the shared
+# audio dir, and emits `speech-requested{audioRef}` for the runtime to play.
+ocp-llm-router = { path = "../../packages/llm-router" }
+ocp-audio-store = { path = "../../packages/audio-store" }
+ocp-voice = { path = "../../packages/voice" }
+ocp-event-bus = { path = "../../packages/event-bus" }
+# Phase 6.5.3H: Kernel-owned Desktop Physics host and event publisher.
+ocp-desktop-physics = { path = "../../packages/desktop-physics" }
+# Phase 6.5.2C: Kernel-owned Desktop World lifecycle.
+ocp-desktop-world = { path = "../../packages/desktop-world" }
+ocp-desktop-world-runtime = { path = "../../packages/desktop-world-runtime" }
+ocp-desktop-sensors = { path = "../../packages/desktop-sensors" }
+
+# Phase 6.5.3J: Companion Physics binding contracts use Serde derives.
+serde.workspace = true
+serde_json.workspace = true
+base64 = "0.22"
+# Cross-platform kernel services used by the main binary on Windows/macOS/Linux.
+# Keep only OS-native sensor bindings in target-specific dependency sections.
+ocp-package-loader = { path = "../../packages/package-loader" }
+ocp-character-package = { path = "../../packages/character-package" }
+zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
+ed25519-dalek = "2"
+uuid.workspace = true
+chrono.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+ocp-desktop-sensors-windows = { path = "../../packages/desktop-sensors-windows" }
+
+[dev-dependencies]
+# The kernel voice-wiring test uses a real temp dir as the shared audio dir and
+# the deterministic reference synthesizer (no real OS voice in unit tests).
+tempfile = "3"
+# The character-package extraction test builds a real signed .ocp to extract.
+ocp-package-builder = { path = "../../packages/package-builder" }

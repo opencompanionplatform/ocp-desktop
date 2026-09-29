@@ -1,0 +1,24 @@
+{
+  "manifestVersion": "0.1",
+  "id": "character.aiko",
+  "type": "character",
+  "version": "1.0.0",
+  "publisher": {
+    "id": "ocp.example",
+    "keyId": "ed25519:test-1"
+  },
+  "license": "Apache-2.0",
+  "entry": "assets/main.json",
+  "assets": [
+    {
+      "path": "assets/main.json",
+      "sha256": "7a0108c74463d413cc33fbda033122c03da775c86440a3e308c49dea054d6408"
+    }
+  ],
+  "signature": {
+    "algorithm": "ed25519",
+    "keyId": "ed25519:test-1",
+    "digest": "sha256:8c13b5e27c944b624cc186618a230e01c694f3190f31f0eac4f50b51086a0249",
+    "value": "base64:/GLz9R+u5T4Aw22T8C3fJBurugmTPe7OQ/2fnBaeBCe5Ls2LpGcjniM/aM4+dcSRK5mpsvCou8saiR1hLzUFDg=="
+  }
+}

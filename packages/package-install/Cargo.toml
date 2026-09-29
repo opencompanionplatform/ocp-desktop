@@ -1,0 +1,19 @@
+[package]
+name = "ocp-package-install"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "ocp_local_packages"
+
+[dependencies]
+ocp-package-loader = { path = "../package-loader" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+sha2 = "0.10"
+
+[dev-dependencies]
+ocp-package-builder = { path = "../package-builder" }
+ed25519-dalek = "2"
+tempfile = "3"

@@ -1,0 +1,81 @@
+[package]
+name = "ocp-llm-router"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "AI Router logic tier (AI_PROVIDER_API, RFC-0002 resolution): provider-neutral request/response contract, ordered fallback chains, provider health FSM, cloud-consent gate (SEC-035), confused-deputy tool-call mediation (SEC-032/033), untrusted-content delimitation (PROMPT_STANDARD). Real vendor wire adapters (OpenRouter/Ollama/Claude/GPT) land in a later I5 slice; this crate proves the router's own logic against in-process reference adapters."
+
+[dependencies]
+ocp-shared-types = { path = "../shared-types" }
+ocp-event-bus = { path = "../event-bus" }
+# I7 Voice: a `tts` provider adapter synthesizes audio and hands it to the
+# kernel-owned audio store, returning an `audioRef` id in its response
+# (AI_PROVIDER_API §2a). The router core still only routes refs, like text.
+ocp-audio-store = { path = "../audio-store" }
+# The real OS-voice synthesizer behind `WindowsSynthesizer` (V1 slice 3) — a
+# safe subprocess call, no WinRT/unsafe reaches this crate.
+ocp-os-tts = { path = "../os-tts" }
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+# I5 slice 2 (Ollama, plain local HTTP) needed only `json`. I5 slice 3
+# (OpenRouter, a real TLS cloud endpoint) needs a TLS backend too. `rustls`
+# was tried first but its default crypto provider (`ring`) needs `clang` to
+# assemble its aarch64 optimizations, which this dev machine (Windows
+# ARM64/Snapdragon) doesn't have installed -- rather than ask for a new
+# toolchain component, switched to `native-tls`, which on Windows rides
+# SChannel (the OS's own TLS, via the pure-Rust `schannel` crate) and needs
+# no C compiler at all. `gzip` because cloud APIs commonly compress
+# responses. NOTE for Linux/macOS CI parity (untested from this machine):
+# `native-tls` on those platforms links the system OpenSSL/Secure Transport
+# instead, which is normally preinstalled on GitHub-hosted runners, but this
+# hasn't been confirmed the way the Windows path now has.
+#
+# IMPORTANT, found live (not by any unit test) via examples/fallback_live.rs:
+# every adapter's `TlsConfig` must explicitly set
+# `.root_certs(ureq::tls::RootCerts::PlatformVerifier)`. ureq's `RootCerts`
+# default is `WebPki` (a bundled Mozilla cert list) regardless of which TLS
+# provider is selected -- but that requires the `webpki-roots` feature,
+# which this dependency list does NOT enable, so under `native-tls` the
+# default silently resolves to zero root certs and every single HTTPS call
+# fails with "unable to find any user-specified roots in the final cert
+# chain," indistinguishable at first glance from a real network/proxy
+# problem. `PlatformVerifier` is the correct pairing for `native-tls` (ureq's
+# own docs: "For native-tls, this uses the roots that native-tls loads by
+# default" -- the Windows Certificate Store via SChannel).
+ureq = { version = "3", default-features = false, features = ["json", "native-tls", "gzip"] }
+# SEC-030 ("provider API keys live in the OS keystore ... only"): `keyring`
+# is the standard cross-platform Rust credential-storage crate and matches
+# AI_PROVIDER_API §5's "DPAPI / Keychain / Secret Service" language exactly.
+# Its `v1` feature is the simple all-in-one get/set/delete API (the crate's
+# own docs point apps wanting fine-grained control over specific stores at
+# `keyring-core` directly instead -- not this project's need). `v1` must be
+# requested explicitly: the crate's default build has neither `v1` nor `cli`
+# enabled and does nothing. No unsafe code is introduced into this crate
+# (`#![forbid(unsafe_code)]`, SEC-042, unchanged) -- keyring's per-platform
+# backends (Windows Credential Manager / macOS Keychain / Linux Secret
+# Service) live inside that dependency, not here, which is also why this
+# didn't need its own `packages/os-keystore` crate the way `packages/
+# os-sensors` needed carving out for I4's raw-FFI sensors.
+keyring = { version = "4", features = ["v1"] }
+# I7 Voice V2: Gemini's TTS endpoint returns the clip as base64-encoded raw PCM
+# (`audio/L16;codec=pcm;rate=24000`), which `providers::gemini_tts` decodes
+# before wrapping into a WAV. Pure-Rust, no unsafe.
+base64 = "0.22"
+
+[dev-dependencies]
+# Only the `examples/store_credential.rs` CLI tool needs this (hides the
+# secret while it's typed at a real terminal) -- deliberately not a normal
+# dependency so the library itself never gains a TTY/terminal-handling
+# surface.
+rpassword = "7"
+# SEC-035 cross-crate proof (tests/cs_aip_memory_consent.rs): the consent
+# gate must be exercised against a *real* MEMORY_API user-profile excerpt, not
+# a hand-built one -- so a test needs the real Memory Layer to produce it.
+# Dev-dependency only: the router itself never links the Memory Layer (they
+# communicate by events/request fields, not a direct call). NOTE: this pulls
+# `ocp-memory`'s SQLCipher/OpenSSL build into this crate's *test* build; the
+# test itself uses `InMemoryStore` (no SQLite), but Cargo compiles the whole
+# crate. OpenSSL is already built+cached in the workspace target from I6, so
+# this is a one-time cost already paid.
+ocp-memory = { path = "../memory" }

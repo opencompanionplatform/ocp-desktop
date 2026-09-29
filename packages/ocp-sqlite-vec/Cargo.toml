@@ -1,0 +1,19 @@
+[package]
+name = "ocp-sqlite-vec"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The single scoped-unsafe boundary for registering the sqlite-vec SQLite extension (ADR-0010 vector search). Wraps the one `sqlite3_auto_extension` FFI call in a safe `register()` so ocp-memory can stay `forbid(unsafe_code)` — the same boundary role packages/os-sensors plays for I4's raw Win32 FFI. Slice-2 spike first: proves sqlite-vec builds and registers on this toolchain before ocp-memory's SqliteStore depends on it."
+
+[dependencies]
+# The sqlite-vec C source, compiled + statically linked at build time via `cc`
+# (another native build like SQLCipher's — cl.exe on this aarch64-pc-windows-msvc
+# machine, proven working by the encryption slice). Exposes exactly one symbol,
+# the extension entrypoint `sqlite3_vec_init`.
+sqlite-vec = "0.1"
+# rusqlite provides `ffi::sqlite3_auto_extension`, the registration seam. Same
+# version + SQLCipher feature as ocp-memory so this spike proves sqlite-vec
+# coexists with the exact SQLite build the real backend uses (Cargo unifies the
+# one rusqlite across the workspace). sqlite-vec's own docs register against
+# rusqlite 0.32.1 specifically, so no version-alignment gap.
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }

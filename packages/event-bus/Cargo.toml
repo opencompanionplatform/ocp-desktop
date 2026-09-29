@@ -1,0 +1,13 @@
+[package]
+name = "ocp-event-bus"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "OCP in-process event bus tier (ADR-0005, EVENT_API)"
+
+[dependencies]
+ocp-shared-types = { path = "../shared-types" }
+uuid.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

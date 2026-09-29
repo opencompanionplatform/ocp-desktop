@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "releaseTag": "starter-assets-v1",
+  "repository": "opencompanionplatform/ocp-releases",
+  "artifacts": [
+    {
+      "role": "character",
+      "fileName": "character.bible-1.0.0.ocp",
+      "url": "https://github.com/opencompanionplatform/ocp-releases/releases/download/starter-assets-v1/character.bible-1.0.0.ocp",
+      "sha256": "876609b4b6fa903a16afe459bdb996947314ec816ed5d8cde0a343758cf866d5"
+    },
+    {
+      "role": "effect-pack",
+      "fileName": "effect.starter-neon-1.0.0.ocp",
+      "url": "https://github.com/opencompanionplatform/ocp-releases/releases/download/starter-assets-v1/effect.starter-neon-1.0.0.ocp",
+      "sha256": "9a2f501718b6dcf8527615c56a8977384f5c7b8e8603ea77fae196181774d91e"
+    }
+  ]
+}

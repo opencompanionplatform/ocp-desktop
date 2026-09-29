@@ -1,0 +1,103 @@
+:root,
+html[data-ocp-theme="dark"] {
+  --ocp-canvas: #050b13;
+  --ocp-canvas-raised: #081426;
+  --ocp-surface: rgba(10, 23, 39, .88);
+  --ocp-surface-solid: #0b1b2d;
+  --ocp-surface-strong: #10263d;
+  --ocp-border: rgba(101, 151, 201, .20);
+  --ocp-border-strong: rgba(72, 181, 244, .44);
+  --ocp-text: #eef6ff;
+  --ocp-text-soft: #c7d7e8;
+  --ocp-muted: #7f96ad;
+  --ocp-accent: #51c9ff;
+  --ocp-blue: #4a78ff;
+  --ocp-violet: #8667f1;
+  --ocp-success: #57d7a4;
+  --ocp-warning: #efb45f;
+  --ocp-danger: #ff849c;
+  --ocp-input: #071625;
+  --ocp-hover: rgba(42, 83, 125, .30);
+  --ocp-selected: rgba(39, 119, 182, .22);
+  --ocp-shadow: rgba(0, 0, 0, .22);
+  --ocp-backdrop: rgba(1, 5, 12, .74);
+  --ocp-topbar: rgba(5, 12, 22, .84);
+  --ocp-sidebar: rgba(6, 15, 28, .94);
+  --ocp-focus: rgba(81, 201, 255, .72);
+  --ocp-code: rgba(61, 124, 205, .12);
+}
+
+html[data-ocp-theme="light"] {
+  --ocp-canvas: #f4f7fb;
+  --ocp-canvas-raised: #ffffff;
+  --ocp-surface: rgba(255, 255, 255, .92);
+  --ocp-surface-solid: #ffffff;
+  --ocp-surface-strong: #eef3f9;
+  --ocp-border: rgba(55, 83, 117, .18);
+  --ocp-border-strong: rgba(29, 124, 194, .38);
+  --ocp-text: #172235;
+  --ocp-text-soft: #34445b;
+  --ocp-muted: #687b93;
+  --ocp-accent: #087fb7;
+  --ocp-blue: #315dd6;
+  --ocp-violet: #6f55cf;
+  --ocp-success: #17855f;
+  --ocp-warning: #9a6518;
+  --ocp-danger: #bf3f5b;
+  --ocp-input: #fbfdff;
+  --ocp-hover: rgba(35, 106, 161, .08);
+  --ocp-selected: rgba(35, 119, 184, .12);
+  --ocp-shadow: rgba(31, 52, 77, .12);
+  --ocp-backdrop: rgba(28, 39, 53, .34);
+  --ocp-topbar: rgba(250, 252, 255, .92);
+  --ocp-sidebar: rgba(248, 251, 255, .96);
+  --ocp-focus: rgba(11, 126, 181, .62);
+  --ocp-code: rgba(41, 107, 172, .08);
+}
+
+.ocp-theme-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--ocp-border);
+  border-radius: 10px;
+  background: var(--ocp-surface);
+  box-shadow: 0 6px 18px var(--ocp-shadow);
+}
+
+.ocp-theme-switch button {
+  min-width: 32px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ocp-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.ocp-theme-switch button:hover {
+  color: var(--ocp-text);
+  background: var(--ocp-hover);
+}
+
+.ocp-theme-switch button.active {
+  color: var(--ocp-text);
+  background: var(--ocp-selected);
+  box-shadow: inset 0 0 0 1px var(--ocp-border-strong);
+}
+
+.ocp-theme-switch button:focus-visible {
+  outline: 2px solid var(--ocp-focus);
+  outline-offset: 1px;
+}
+
+@media (max-width: 620px) {
+  .ocp-theme-switch button { min-width: 28px; padding-inline: 5px; }
+  .ocp-theme-switch button:first-child { font-size: 0; }
+  .ocp-theme-switch button:first-child::before { content: "A"; font-size: 11px; }
+}

@@ -1,0 +1,23 @@
+{
+  "schema": "character/1",
+  "id": "character.meowsom",
+  "name": "Meowsom",
+  "version": "1.0.0",
+  "renderer": "sprite-sheet-2d",
+  "runtime": {
+    "bubbleAnchor": [
+      0,
+      -176
+    ],
+    "scale": 0.6,
+    "hitbox": [
+      44,
+      40,
+      220,
+      248
+    ]
+  },
+  "sprites": [],
+  "animations": {},
+  "defaultAnimation": "idle"
+}

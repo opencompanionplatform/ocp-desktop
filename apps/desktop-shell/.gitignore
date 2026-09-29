@@ -1,0 +1,7 @@
+node_modules/
+dist-electron/
+dist-renderer/
+coverage/
+*.log
+release/
+release-arm64-rc/

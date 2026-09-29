@@ -1,0 +1,16 @@
+{
+  "schema": "ocp-update/1",
+  "channel": "stable",
+  "version": "1.2.0",
+  "publishedAt": "2026-08-13T00:00:00Z",
+  "releaseNotesUrl": "https://github.com/opencompanionplatform/ocp-releases/releases/tag/v1.2.0",
+  "artifacts": [
+    {
+      "platform": "windows",
+      "arch": "arm64",
+      "url": "https://github.com/opencompanionplatform/ocp-releases/releases/download/v1.2.0/artifact.txt",
+      "size": 20,
+      "sha256": "f627b933e27aac10b060c4646cf100ba3e1a89d6481a318808123163bcc31456"
+    }
+  ]
+}

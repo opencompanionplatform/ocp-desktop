@@ -1,0 +1,17 @@
+[package]
+name = "ocp-desktop-sensors-windows"
+version = "0.2.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+ocp-desktop-sensors = { path = "../desktop-sensors" }
+ocp-shared-types = { path = "../shared-types" }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+] }

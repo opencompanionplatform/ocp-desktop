@@ -1,0 +1,100 @@
+name: OCP Desktop Public CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-boundary:
+    name: Public source boundary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Verify public-source provenance and private-root boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path PUBLIC-SOURCE-INFO.json)) { throw 'PUBLIC-SOURCE-INFO.json is required.' }
+          $info = Get-Content PUBLIC-SOURCE-INFO.json -Raw | ConvertFrom-Json
+          if ($info.schema -ne 'ocp-public-desktop-source/1') { throw 'Unexpected public-source schema.' }
+          if ($info.publicRepository -ne 'opencompanionplatform/ocp-desktop') { throw 'Unexpected public repository identity.' }
+          foreach ($path in @(
+            'apps/store-web',
+            'apps/creator-portal',
+            'apps/operations-dashboard',
+            'apps/character-store',
+            'apps/prompt-library',
+            'services/registry-api',
+            'supabase',
+            'tools/staging',
+            'release/secrets',
+            'release/out'
+          )) {
+            if (Test-Path $path) { throw "Private/generated path must not exist in public source: $path" }
+          }
+          if ((Get-Content Cargo.toml -Raw) -match 'services/registry-api|"benches"') {
+            throw 'Public Cargo workspace contains a private/non-exported member.'
+          }
+          Write-Host "sourceCommit=$($info.sourceCommit) contentTreeSha256=$($info.contentTreeSha256)"
+
+  rust:
+    name: Rust workspace
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - name: Cargo test
+        shell: pwsh
+        run: cargo test --workspace --locked
+      - name: Native companion host tests
+        shell: pwsh
+        run: cargo test --manifest-path spike/native-companion-window/Cargo.toml --locked
+      - name: Git diff check
+        shell: pwsh
+        run: git diff --check
+
+  desktop-shell:
+    name: Desktop Shell and Animation Studio
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: |
+            apps/desktop-shell/package-lock.json
+            apps/animation-studio/app/package-lock.json
+      - name: Install Animation Studio dependencies
+        working-directory: apps/animation-studio/app
+        run: npm ci
+      - name: Test Animation Studio
+        working-directory: apps/animation-studio/app
+        run: npm test
+      - name: Lint Animation Studio
+        working-directory: apps/animation-studio/app
+        run: npm run lint
+      - name: Build Animation Studio
+        working-directory: apps/animation-studio/app
+        run: npm run build
+      - name: Install Desktop Shell dependencies
+        working-directory: apps/desktop-shell
+        run: npm ci
+      - name: Typecheck Desktop Shell
+        working-directory: apps/desktop-shell
+        run: npm run typecheck
+      - name: Lint Desktop Shell
+        working-directory: apps/desktop-shell
+        run: npm run lint
+      - name: Test Desktop Shell
+        working-directory: apps/desktop-shell
+        run: npm test
+      - name: Build Desktop Shell
+        working-directory: apps/desktop-shell
+        run: npm run build

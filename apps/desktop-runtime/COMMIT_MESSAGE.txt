@@ -1,0 +1,9 @@
+feat(runtime): complete Sprint A tray state and character switching
+
+- hide hover controls while dragging and require pointer re-entry after release
+- restore only the companion from tray without auto-opening transient panels
+- replace native character popup with an in-window installed-character picker
+- activate and reload installed characters without restarting the scene
+- validate, install, activate, and refresh .ocp packages through GDScript pipeline
+- support uninstall with remaining-package and placeholder fallback
+- add Sprint A README and verification checklist
