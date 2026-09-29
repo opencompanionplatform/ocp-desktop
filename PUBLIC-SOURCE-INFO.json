@@ -2,7 +2,7 @@
     "schema":  "ocp-public-desktop-source/1",
     "sourceRepository":  "opencompanionplatform/ocp-platform",
     "publicRepository":  "opencompanionplatform/ocp-desktop",
-    "sourceCommit":  "f351f7cea91bcdd82599a429b6dff7f1e6711a69",
+    "sourceCommit":  "41be0d35573f78fa0ff3d64c469b79ad004bf633",
     "exportPolicy":  "desktop-client-allowlist-v1",
     "includedRoots":  [
                           ".cargo",
@@ -32,6 +32,7 @@
                           "release/tools/Pack-OcpLocalRuntimePck.gd",
                           "Cargo.toml",
                           "Cargo.lock",
+                          "register_ocp_dev_protocol.ps1",
                           ".gitignore",
                           "LICENSE",
                           "PRIVACY.md",
@@ -39,7 +40,7 @@
                           "CODE_SIGNING.md",
                           "docs/public-desktop"
                       ],
-    "createdAt":  "2026-09-29T18:32:04Z",
-    "fileCount":  1090,
-    "contentTreeSha256":  "dd5015dcb4e3043458950e38bd9b8ebf890918ae0a52a2d68cb3d56a2d77371f"
+    "createdAt":  "2026-09-29T18:38:42Z",
+    "fileCount":  1091,
+    "contentTreeSha256":  "068778c5b6de81fd4814a7322f08e6c392da1ce45bb997c42168cb6b8084e0c1"
 }
