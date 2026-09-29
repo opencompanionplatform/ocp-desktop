@@ -36,7 +36,7 @@ jobs:
         arch: ${{ fromJSON(github.event_name == 'push' && '["arm64","x86_64"]' || format('["{0}"]', inputs.arch)) }}
     env:
       TARGET_ARCH: ${{ matrix.arch }}
-      OCP_RELEASE_STORE_ORIGIN: https://ocp-store-dp4.pages.dev
+      OCP_RELEASE_STORE_ORIGIN: https://ocp-store.pages.dev
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
@@ -83,7 +83,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '22.12.0'
+          node-version: '22.14.0'
           cache: npm
           cache-dependency-path: |
             apps/desktop-shell/package-lock.json
