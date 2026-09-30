@@ -169,11 +169,31 @@ jobs:
             -Arch $env:TARGET_ARCH `
             -RequirePublishable
 
+      - name: Build and verify unsigned Windows installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = Get-ChildItem release/out -Directory -Filter 'ocp-windows-*' | Select-Object -First 1
+          if ($null -eq $bundle) { throw 'Portable bundle directory was not produced.' }
+          powershell -NoProfile -ExecutionPolicy Bypass `
+            -File release/Build-OcpWindowsInstaller.ps1 `
+            -BundleDirectory $bundle.FullName `
+            -Version $env:RELEASE_VERSION `
+            -Arch $env:TARGET_ARCH `
+            -CompressionProfile release `
+            -OutputDirectory release/out
+          $installer = Join-Path release/out "ocp-windows-$env:TARGET_ARCH-$env:RELEASE_VERSION-setup.exe"
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "Unsigned installer was not produced: $installer" }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          if ($signature.Status -ne 'NotSigned') { throw "Public preview installer must remain unsigned; status=$($signature.Status)" }
+          Write-Host "unsignedInstaller=$installer status=$($signature.Status)"
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ocp-public-unsigned-windows-${{ matrix.arch }}-${{ github.event_name == 'push' && github.ref_name || format('v{0}', inputs.version) }}
           path: |
             release/out/*.zip
+            release/out/*-setup.exe
             release/out/update-manifest.unsigned.json
           if-no-files-found: error
           retention-days: 7
