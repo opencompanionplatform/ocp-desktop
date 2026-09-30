@@ -1388,6 +1388,111 @@ impl OcpRuntimeBridge {
             .is_some_and(|sender| sender.send(env).is_ok())
     }
 
+    /// Open one persistent Gemini 3.8 Live audio-to-audio session. Credentials
+    /// stay Kernel-side; Runtime supplies only a bounded display-safe character
+    /// instruction and a session id.
+    #[func]
+    fn request_live_voice_start(
+        &mut self,
+        session_id: GString,
+        system_instruction: GString,
+    ) -> bool {
+        let session_id = session_id.to_string();
+        let session_id = session_id.trim();
+        if session_id.is_empty() || session_id.len() > 128 {
+            return false;
+        }
+        let (instruction, _) = sanitize_display_text(&system_instruction.to_string());
+        let instruction: String = instruction.chars().take(2400).collect();
+        let Ok(env) = Envelope::new(
+            "ocp.runtime.live-voice-start",
+            "runtime",
+            serde_json::json!({
+                "schemaVersion": 1,
+                "sessionId": session_id,
+                "systemInstruction": instruction,
+            }),
+        ) else {
+            return false;
+        };
+        self.outbox
+            .as_ref()
+            .is_some_and(|sender| sender.send(env).is_ok())
+    }
+
+    #[func]
+    fn request_live_voice_activity_start(&mut self, session_id: GString) -> bool {
+        self.request_live_voice_control_event("ocp.runtime.live-voice-activity-start", session_id)
+    }
+
+    #[func]
+    fn request_live_voice_audio(
+        &mut self,
+        session_id: GString,
+        pcm: PackedByteArray,
+        sample_rate: i64,
+    ) -> bool {
+        let session_id = session_id.to_string();
+        let session_id = session_id.trim();
+        let bytes = pcm.as_slice();
+        if session_id.is_empty()
+            || session_id.len() > 128
+            || sample_rate != 16_000
+            || bytes.is_empty()
+            || bytes.len() > 64 * 1024
+            || bytes.len() % 2 != 0
+        {
+            return false;
+        }
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let Ok(env) = Envelope::new(
+            "ocp.runtime.live-voice-audio",
+            "runtime",
+            serde_json::json!({
+                "schemaVersion": 1,
+                "sessionId": session_id,
+                "sampleRate": sample_rate,
+                "pcmBase64": encoded,
+            }),
+        ) else {
+            return false;
+        };
+        self.outbox
+            .as_ref()
+            .is_some_and(|sender| sender.send(env).is_ok())
+    }
+
+    #[func]
+    fn request_live_voice_activity_end(&mut self, session_id: GString) -> bool {
+        self.request_live_voice_control_event("ocp.runtime.live-voice-activity-end", session_id)
+    }
+
+    #[func]
+    fn request_live_voice_close(&mut self, session_id: GString) -> bool {
+        self.request_live_voice_control_event("ocp.runtime.live-voice-close", session_id)
+    }
+
+    fn request_live_voice_control_event(&mut self, event_type: &str, session_id: GString) -> bool {
+        let session_id = session_id.to_string();
+        let session_id = session_id.trim();
+        if session_id.is_empty() || session_id.len() > 128 {
+            return false;
+        }
+        let Ok(env) = Envelope::new(
+            event_type,
+            "runtime",
+            serde_json::json!({
+                "schemaVersion": 1,
+                "sessionId": session_id,
+            }),
+        ) else {
+            return false;
+        };
+        self.outbox
+            .as_ref()
+            .is_some_and(|sender| sender.send(env).is_ok())
+    }
+
     /// Submit one non-streaming cloud chat turn to Kernel. Provider credentials
     /// stay in the OS keystore; Godot sends only display-safe prompt/config.
     // Godot ABI surface: explicit scalar parameters keep the script contract
@@ -1485,6 +1590,35 @@ impl OcpRuntimeBridge {
 
     #[signal]
     fn asr_closed(session_id: GString);
+
+    #[signal]
+    fn live_voice_ready(
+        session_id: GString,
+        model_id: GString,
+        input_sample_rate: i64,
+        output_sample_rate: i64,
+    );
+
+    #[signal]
+    fn live_voice_input_transcript(session_id: GString, text: GString);
+
+    #[signal]
+    fn live_voice_output_transcript(session_id: GString, text: GString);
+
+    #[signal]
+    fn live_voice_audio_chunk(session_id: GString, audio: PackedByteArray, sample_rate: i64);
+
+    #[signal]
+    fn live_voice_turn_complete(session_id: GString);
+
+    #[signal]
+    fn live_voice_interrupted(session_id: GString);
+
+    #[signal]
+    fn live_voice_error(session_id: GString, reason_code: GString);
+
+    #[signal]
+    fn live_voice_closed(session_id: GString);
 
     /// Internal bridge lifecycle used by RuntimeV3TTSService. `speech_started`
     /// fires before the existing `speech_requested` presentation signal so the
@@ -2351,6 +2485,123 @@ impl OcpRuntimeBridge {
                     .unwrap_or_default();
                 self.base_mut()
                     .emit_signal("asr_closed", &[session_id.to_variant()]);
+            }
+            "ocp.voice.live-ready" => {
+                let session_id = env
+                    .data
+                    .get("sessionId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let model_id = env
+                    .data
+                    .get("modelId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("gemini-3.8-live");
+                let input_rate = env
+                    .data
+                    .get("inputSampleRate")
+                    .and_then(serde_json::Value::as_i64)
+                    .unwrap_or(16_000);
+                let output_rate = env
+                    .data
+                    .get("outputSampleRate")
+                    .and_then(serde_json::Value::as_i64)
+                    .unwrap_or(24_000);
+                self.base_mut().emit_signal(
+                    "live_voice_ready",
+                    &[
+                        session_id.to_variant(),
+                        model_id.to_variant(),
+                        input_rate.to_variant(),
+                        output_rate.to_variant(),
+                    ],
+                );
+            }
+            "ocp.voice.live-input-transcript" | "ocp.voice.live-output-transcript" => {
+                let session_id = env
+                    .data
+                    .get("sessionId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let text = env
+                    .data
+                    .get("text")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let (clean, _) = sanitize_display_text(text);
+                let signal_name = if env.event_type == "ocp.voice.live-input-transcript" {
+                    "live_voice_input_transcript"
+                } else {
+                    "live_voice_output_transcript"
+                };
+                self.base_mut()
+                    .emit_signal(signal_name, &[session_id.to_variant(), clean.to_variant()]);
+            }
+            "ocp.voice.live-audio-chunk" => {
+                let session_id = env
+                    .data
+                    .get("sessionId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let encoded = env
+                    .data
+                    .get("audioBase64")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let sample_rate = env
+                    .data
+                    .get("sampleRate")
+                    .and_then(serde_json::Value::as_i64)
+                    .unwrap_or(24_000);
+                if session_id.is_empty() || encoded.is_empty() || sample_rate != 24_000 {
+                    return;
+                }
+                let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(encoded) else {
+                    return;
+                };
+                if bytes.is_empty() || bytes.len() > 32 * 1024 || bytes.len() % 2 != 0 {
+                    return;
+                }
+                self.base_mut().emit_signal(
+                    "live_voice_audio_chunk",
+                    &[
+                        session_id.to_variant(),
+                        PackedByteArray::from(bytes.as_slice()).to_variant(),
+                        sample_rate.to_variant(),
+                    ],
+                );
+            }
+            "ocp.voice.live-turn-complete"
+            | "ocp.voice.live-interrupted"
+            | "ocp.voice.live-closed" => {
+                let session_id = env
+                    .data
+                    .get("sessionId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let signal_name = match env.event_type.as_str() {
+                    "ocp.voice.live-turn-complete" => "live_voice_turn_complete",
+                    "ocp.voice.live-interrupted" => "live_voice_interrupted",
+                    _ => "live_voice_closed",
+                };
+                self.base_mut()
+                    .emit_signal(signal_name, &[session_id.to_variant()]);
+            }
+            "ocp.voice.live-error" => {
+                let session_id = env
+                    .data
+                    .get("sessionId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let reason = env
+                    .data
+                    .get("reasonCode")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("live-voice-unavailable");
+                self.base_mut().emit_signal(
+                    "live_voice_error",
+                    &[session_id.to_variant(), reason.to_variant()],
+                );
             }
             "ocp.behavior.bubble-requested" => {
                 let Ok(req) = serde_json::from_value::<BubbleRequested>(env.data.clone()) else {

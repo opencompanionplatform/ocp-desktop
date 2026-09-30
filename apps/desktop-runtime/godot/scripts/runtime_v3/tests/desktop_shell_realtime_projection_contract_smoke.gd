@@ -19,24 +19,38 @@ func _initialize() -> void:
 	adapter._on_chat_started({"message_id": "turn-1"})
 	adapter._on_chat_delta({"message_id": "turn-1", "text": "สวัสดี"})
 	adapter._on_chat_delta({"message_id": "turn-1", "text": "สวัสดีครับ 😊"})
+	adapter._refresh_chat_presentation()
 	var one_running_message := adapter.chat_messages.size() == 1 \
 		and str(adapter.chat_messages[0].get("text", "")) == "สวัสดีครับ 😊" \
 		and str(adapter.chat_messages[0].get("status", "")) == "streaming"
 	var thinking_state := adapter._chat_presentation_state() == "think"
 	adapter.voice_health_state = {"status": "playing", "reasonCode": "", "lastSuccessAtMs": 0}
+	adapter._refresh_chat_presentation()
 	var talking_state := adapter._chat_presentation_state() == "talk"
 	adapter._on_chat_completed({"message_id": "turn-1", "text": "สวัสดีครับ 😊"})
 	adapter.voice_health_state = {"status": "healthy", "reasonCode": "", "lastSuccessAtMs": 1}
 	var one_completed_message := adapter.chat_messages.size() == 1 \
 		and str(adapter.chat_messages[0].get("status", "")) == "complete"
+	adapter._on_live_voice_turn_completed({
+		"turn_id": "live-turn-2",
+		"user_text": "วันนี้เป็นอย่างไรบ้าง",
+		"assistant_text": "วันนี้ดูสดใสดีนะคะ",
+	})
+	adapter._refresh_chat_presentation()
+	var live_voice_projected := adapter.chat_messages.size() == 3 \
+		and str(adapter.chat_messages[1].get("role", "")) == "user" \
+		and str(adapter.chat_messages[1].get("text", "")) == "วันนี้เป็นอย่างไรบ้าง" \
+		and str(adapter.chat_messages[2].get("role", "")) == "assistant" \
+		and str(adapter.chat_messages[2].get("text", "")) == "วันนี้ดูสดใสดีนะคะ" \
+		and str(adapter.chat_messages[2].get("status", "")) == "complete"
 	var idle_state := adapter._chat_presentation_state() == "idle"
 	adapter._apply_chat_visibility({"type": "shell.chat-visibility", "active": true})
 	var focus_projected := bool(context.runtime_config.get("chat_focus_active", false)) \
 		and bool(context.runtime_config.get("chat_presentation_active", false)) \
 		and bool(adapter.chat_presentation_active)
-	var ok := AdapterScript.SCHEMA_VERSION == 18 \
-		and one_running_message and one_completed_message \
+	var ok := AdapterScript.SCHEMA_VERSION == 20 \
+		and one_running_message and one_completed_message and live_voice_projected \
 		and thinking_state and talking_state and idle_state and focus_projected
-	print("[DESKTOP-SHELL-REALTIME] schema=", AdapterScript.SCHEMA_VERSION, " running=", one_running_message, " completed=", one_completed_message, " states=", [thinking_state, talking_state, idle_state], " focus=", focus_projected)
+	print("[DESKTOP-SHELL-REALTIME] schema=", AdapterScript.SCHEMA_VERSION, " running=", one_running_message, " completed=", one_completed_message, " live_voice=", live_voice_projected, " states=", [thinking_state, talking_state, idle_state], " focus=", focus_projected)
 	holder.free()
 	quit(0 if ok else 1)

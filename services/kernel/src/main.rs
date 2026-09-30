@@ -79,6 +79,10 @@ use ocp_llm_router::providers::gemini_asr::{
     start_live_asr, GeminiAsrEvent, GeminiLiveAsrControl, LIVE_TRANSCRIBE_MODEL,
     LIVE_TRANSCRIBE_SAMPLE_RATE,
 };
+use ocp_llm_router::providers::gemini_live_voice::{
+    start_live_voice, GeminiLiveVoiceControl, GeminiLiveVoiceEvent, LIVE_VOICE_INPUT_RATE,
+    LIVE_VOICE_MODEL, LIVE_VOICE_OUTPUT_RATE,
+};
 use ocp_llm_router::providers::gemini_tts::{self, GeminiSynthesizer, VoiceGender};
 use ocp_llm_router::providers::openrouter::OpenRouterAdapter;
 use ocp_llm_router::types::{
@@ -1173,6 +1177,209 @@ fn runtime_asr_end(env: &Envelope, active: &Option<(String, GeminiLiveAsrControl
         return false;
     };
     active_id == &session_id && control.activity_end()
+}
+
+const RUNTIME_LIVE_VOICE_MAX_PCM_BYTES: usize = 64 * 1024;
+const RUNTIME_LIVE_VOICE_AUDIO_EVENT_BYTES: usize = 32 * 1024;
+
+fn runtime_live_voice_instruction(env: &Envelope) -> String {
+    env.data
+        .get("systemInstruction")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .chars()
+        .take(2400)
+        .collect()
+}
+
+fn runtime_live_voice_event_envelopes(
+    session_id: &str,
+    correlation_id: Uuid,
+    event: &GeminiLiveVoiceEvent,
+) -> Vec<Envelope> {
+    let mut out = Vec::new();
+    let mut push_one = |event_type: &str, data: serde_json::Value| {
+        if let Ok(envelope) = Envelope::new(event_type, "kernel", data) {
+            out.push(envelope.with_correlation(correlation_id));
+        }
+    };
+    match event {
+        GeminiLiveVoiceEvent::Ready => push_one(
+            "ocp.voice.live-ready",
+            json!({
+                "sessionId": session_id,
+                "modelId": LIVE_VOICE_MODEL,
+                "inputSampleRate": LIVE_VOICE_INPUT_RATE,
+                "outputSampleRate": LIVE_VOICE_OUTPUT_RATE,
+            }),
+        ),
+        GeminiLiveVoiceEvent::InputTranscript(text) => push_one(
+            "ocp.voice.live-input-transcript",
+            json!({"sessionId": session_id, "text": text}),
+        ),
+        GeminiLiveVoiceEvent::OutputTranscript(text) => push_one(
+            "ocp.voice.live-output-transcript",
+            json!({"sessionId": session_id, "text": text}),
+        ),
+        GeminiLiveVoiceEvent::Audio(audio) => {
+            for chunk in audio.chunks(RUNTIME_LIVE_VOICE_AUDIO_EVENT_BYTES) {
+                push_one(
+                    "ocp.voice.live-audio-chunk",
+                    json!({
+                        "sessionId": session_id,
+                        "audioBase64": base64::engine::general_purpose::STANDARD.encode(chunk),
+                        "sampleRate": LIVE_VOICE_OUTPUT_RATE,
+                    }),
+                );
+            }
+        }
+        GeminiLiveVoiceEvent::TurnComplete => push_one(
+            "ocp.voice.live-turn-complete",
+            json!({"sessionId": session_id}),
+        ),
+        GeminiLiveVoiceEvent::Interrupted => push_one(
+            "ocp.voice.live-interrupted",
+            json!({"sessionId": session_id}),
+        ),
+        GeminiLiveVoiceEvent::Error(reason) => push_one(
+            "ocp.voice.live-error",
+            json!({"sessionId": session_id, "reasonCode": reason}),
+        ),
+        GeminiLiveVoiceEvent::Closed => {
+            push_one("ocp.voice.live-closed", json!({"sessionId": session_id}))
+        }
+    }
+    out
+}
+
+fn push_runtime_live_voice_error(
+    presentation: &Presentation,
+    session_id: &str,
+    correlation_id: Uuid,
+    reason_code: &'static str,
+) {
+    if let Ok(envelope) = Envelope::new(
+        "ocp.voice.live-error",
+        "kernel",
+        json!({"sessionId": session_id, "reasonCode": reason_code}),
+    ) {
+        push(presentation, &envelope.with_correlation(correlation_id));
+    }
+}
+
+fn start_runtime_live_voice(
+    env: &Envelope,
+    presentation: &Presentation,
+) -> Option<(String, GeminiLiveVoiceControl)> {
+    let Some(session_id) = runtime_asr_session_id(env) else {
+        push_runtime_live_voice_error(presentation, "invalid", env.id, "invalid-live-session-id");
+        return None;
+    };
+    let Some(api_key) = gemini_key() else {
+        push_runtime_live_voice_error(
+            presentation,
+            &session_id,
+            env.id,
+            "provider-credential-required",
+        );
+        return None;
+    };
+    let instruction = runtime_live_voice_instruction(env);
+    let Ok((control, events)) = start_live_voice(api_key, instruction) else {
+        push_runtime_live_voice_error(presentation, &session_id, env.id, "live-voice-start-failed");
+        return None;
+    };
+
+    let pump_presentation = Arc::clone(presentation);
+    let pump_session_id = session_id.clone();
+    let correlation_id = env.id;
+    let spawn = thread::Builder::new()
+        .name("ocp-runtime-live-voice-events".to_owned())
+        .spawn(move || {
+            while let Some(event) = events.recv() {
+                let terminal = matches!(
+                    event,
+                    GeminiLiveVoiceEvent::Error(_) | GeminiLiveVoiceEvent::Closed
+                );
+                for envelope in
+                    runtime_live_voice_event_envelopes(&pump_session_id, correlation_id, &event)
+                {
+                    push(&pump_presentation, &envelope);
+                }
+                if terminal {
+                    break;
+                }
+            }
+            events.join();
+        });
+    if spawn.is_err() {
+        let _ = control.close();
+        push_runtime_live_voice_error(
+            presentation,
+            &session_id,
+            env.id,
+            "live-voice-pump-start-failed",
+        );
+        return None;
+    }
+    Some((session_id, control))
+}
+
+fn runtime_live_voice_audio(
+    env: &Envelope,
+    active: &Option<(String, GeminiLiveVoiceControl)>,
+) -> bool {
+    let Some(session_id) = runtime_asr_session_id(env) else {
+        return false;
+    };
+    let Some((active_id, control)) = active else {
+        return false;
+    };
+    if active_id != &session_id
+        || env
+            .data
+            .get("sampleRate")
+            .and_then(serde_json::Value::as_u64)
+            != Some(u64::from(LIVE_VOICE_INPUT_RATE))
+    {
+        return false;
+    }
+    let Some(encoded) = env
+        .data
+        .get("pcmBase64")
+        .and_then(serde_json::Value::as_str)
+    else {
+        return false;
+    };
+    let Ok(pcm) = base64::engine::general_purpose::STANDARD.decode(encoded) else {
+        return false;
+    };
+    if pcm.is_empty() || pcm.len() > RUNTIME_LIVE_VOICE_MAX_PCM_BYTES || pcm.len() % 2 != 0 {
+        return false;
+    }
+    control.send_pcm16(pcm)
+}
+
+fn runtime_live_voice_activity(
+    env: &Envelope,
+    active: &Option<(String, GeminiLiveVoiceControl)>,
+    start: bool,
+) -> bool {
+    let Some(session_id) = runtime_asr_session_id(env) else {
+        return false;
+    };
+    let Some((active_id, control)) = active else {
+        return false;
+    };
+    if active_id != &session_id {
+        return false;
+    }
+    if start {
+        control.activity_start()
+    } else {
+        control.activity_end()
+    }
 }
 
 /// One Behavior Engine per companion, created lazily on first delivery —
@@ -2286,6 +2493,7 @@ fn drain_outcomes(
     audio_store: Arc<AudioStore>,
 ) {
     let mut runtime_asr: Option<(String, GeminiLiveAsrControl)> = None;
+    let mut runtime_live_voice: Option<(String, GeminiLiveVoiceControl)> = None;
     loop {
         match recv_envelope(&mut conn) {
             Ok(env) => {
@@ -2376,6 +2584,72 @@ fn drain_outcomes(
                     match bindings.enqueue_autonomous_surface_action(companion_id, command, handle) {
                         Ok(()) => println!("[kernel] [physics] autonomous movement queued {command:?} for `{companion_id}`"),
                         Err(error) => eprintln!("[kernel] [physics] autonomous movement rejected for `{companion_id}`: {error}"),
+                    }
+                    continue;
+                }
+
+                if env.event_type == "ocp.runtime.live-voice-start" {
+                    if let Some((_, previous)) = runtime_live_voice.take() {
+                        let _ = previous.close();
+                    }
+                    if let Some((_, previous_asr)) = runtime_asr.take() {
+                        let _ = previous_asr.close();
+                    }
+                    runtime_live_voice = start_runtime_live_voice(&env, &presentation);
+                    continue;
+                }
+
+                if env.event_type == "ocp.runtime.live-voice-activity-start" {
+                    if !runtime_live_voice_activity(&env, &runtime_live_voice, true) {
+                        let session_id =
+                            runtime_asr_session_id(&env).unwrap_or_else(|| "invalid".to_owned());
+                        push_runtime_live_voice_error(
+                            &presentation,
+                            &session_id,
+                            env.id,
+                            "live-voice-session-unavailable",
+                        );
+                    }
+                    continue;
+                }
+
+                if env.event_type == "ocp.runtime.live-voice-audio" {
+                    if !runtime_live_voice_audio(&env, &runtime_live_voice) {
+                        let session_id =
+                            runtime_asr_session_id(&env).unwrap_or_else(|| "invalid".to_owned());
+                        push_runtime_live_voice_error(
+                            &presentation,
+                            &session_id,
+                            env.id,
+                            "invalid-live-audio-frame",
+                        );
+                    }
+                    continue;
+                }
+
+                if env.event_type == "ocp.runtime.live-voice-activity-end" {
+                    if !runtime_live_voice_activity(&env, &runtime_live_voice, false) {
+                        let session_id =
+                            runtime_asr_session_id(&env).unwrap_or_else(|| "invalid".to_owned());
+                        push_runtime_live_voice_error(
+                            &presentation,
+                            &session_id,
+                            env.id,
+                            "live-voice-session-unavailable",
+                        );
+                    }
+                    continue;
+                }
+
+                if env.event_type == "ocp.runtime.live-voice-close" {
+                    let session_id =
+                        runtime_asr_session_id(&env).unwrap_or_else(|| "invalid".to_owned());
+                    if let Some((active_id, control)) = runtime_live_voice.take() {
+                        if active_id == session_id {
+                            let _ = control.close();
+                        } else {
+                            runtime_live_voice = Some((active_id, control));
+                        }
                     }
                     continue;
                 }

@@ -234,6 +234,7 @@ func start() -> void:
 	_subscribe(&"chat.assistant_stream_delta", Callable(self, "_on_chat_delta"))
 	_subscribe(&"chat.assistant_message_received", Callable(self, "_on_chat_completed"))
 	_subscribe(&"chat.response_failed", Callable(self, "_on_chat_failed"))
+	_subscribe(&"voice.live_turn_completed", Callable(self, "_on_live_voice_turn_completed"))
 	_subscribe(&"ai.provider_status_changed", Callable(self, "_on_provider_status"))
 	_subscribe(&"ai.connection_test_completed", Callable(self, "_on_ai_test_completed"))
 	_subscribe(&"ai.models_discovered", Callable(self, "_on_ai_models_discovered"))
@@ -275,7 +276,7 @@ func stop() -> void:
 	_write_snapshot("unavailable")
 	if active_instance == self:
 		active_instance = null
-	for topic in [&"chat.response_started", &"chat.assistant_stream_delta", &"chat.assistant_message_received", &"chat.response_failed", &"ai.provider_status_changed", &"ai.connection_test_completed", &"ai.models_discovered", &"tts.requested", &"tts.started", &"tts.finished", &"tts.failed", &"resource_monitor.updated", &"update.status_changed", &"update.check_finished", &"package.installed", &"character.changed", &"character.uninstalled", &"character.uninstall_result", &"character.loaded", &"cloud.auth.updated", &"cloud.session.changed", &"cloud.device.updated", &"cloud.library.updated", &"cloud.catalog.updated", &"cloud.progression.updated", &"cloud.progression.sync_state", &"cloud.download.updated", &"cloud.download.desktop_transfer_requested"]:
+	for topic in [&"chat.response_started", &"chat.assistant_stream_delta", &"chat.assistant_message_received", &"chat.response_failed", &"voice.live_turn_completed", &"ai.provider_status_changed", &"ai.connection_test_completed", &"ai.models_discovered", &"tts.requested", &"tts.started", &"tts.finished", &"tts.failed", &"resource_monitor.updated", &"update.status_changed", &"update.check_finished", &"package.installed", &"character.changed", &"character.uninstalled", &"character.uninstall_result", &"character.loaded", &"cloud.auth.updated", &"cloud.session.changed", &"cloud.device.updated", &"cloud.library.updated", &"cloud.catalog.updated", &"cloud.progression.updated", &"cloud.progression.sync_state", &"cloud.download.updated", &"cloud.download.desktop_transfer_requested"]:
 		if event_bus != null:
 			event_bus.unsubscribe(topic, Callable(self, _callback_name_for_topic(topic)))
 
@@ -1879,6 +1880,23 @@ func _on_chat_completed(payload: Dictionary) -> void:
 	chat_status = _chat_status_from_provider()
 	chat_stream_snapshot_pending = false
 	chat_stream_snapshot_not_before_msec = 0
+	_write_snapshot()
+
+
+func _on_live_voice_turn_completed(payload: Dictionary) -> void:
+	var turn_id := str(payload.get("turn_id", "")).strip_edges()
+	var user_text := str(payload.get("user_text", "")).strip_edges()
+	var assistant_text := str(payload.get("assistant_text", "")).strip_edges()
+	if turn_id.is_empty() or (user_text.is_empty() and assistant_text.is_empty()):
+		return
+	chat_revision += 1
+	if not user_text.is_empty():
+		chat_messages.append({"id": turn_id, "role": "user", "text": user_text, "status": "complete", "feedback": "none"})
+	if not assistant_text.is_empty():
+		_upsert_assistant_message(turn_id, assistant_text, "complete")
+	_trim_chat_messages()
+	chat_active_message_id = ""
+	chat_status = _chat_status_from_provider()
 	_write_snapshot()
 
 
@@ -4992,6 +5010,7 @@ func _callback_name_for_topic(topic: StringName) -> StringName:
 		&"chat.assistant_stream_delta": return &"_on_chat_delta"
 		&"chat.assistant_message_received": return &"_on_chat_completed"
 		&"chat.response_failed": return &"_on_chat_failed"
+		&"voice.live_turn_completed": return &"_on_live_voice_turn_completed"
 		&"ai.provider_status_changed": return &"_on_provider_status"
 		&"ai.connection_test_completed": return &"_on_ai_test_completed"
 		&"ai.models_discovered": return &"_on_ai_models_discovered"

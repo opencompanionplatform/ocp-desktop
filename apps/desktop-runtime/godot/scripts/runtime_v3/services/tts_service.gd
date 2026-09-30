@@ -60,17 +60,26 @@ var _cancelled_speech_ids: Dictionary = {}
 # on completion/cancellation.
 var _voice_latency_requests: Dictionary = {}
 var _voice_latency_speech: Dictionary = {}
+# Gemini 3.8 Live audio bypasses Kernel's normal TTS request/correlation path
+# but reuses the same AudioStreamGenerator playback lifecycle.
+var _live_speech_ids: Dictionary = {}
 
 
 func start() -> void:
 	event_bus.subscribe(&"tts.requested", Callable(self, "_on_tts_requested"))
 	event_bus.subscribe(&"tts.cancel_requested", Callable(self, "_on_tts_cancel_requested"))
+	event_bus.subscribe(&"voice.live_audio_started", Callable(self, "_on_live_audio_started"))
+	event_bus.subscribe(&"voice.live_audio_chunk", Callable(self, "_on_live_audio_chunk"))
+	event_bus.subscribe(&"voice.live_audio_finished", Callable(self, "_on_live_audio_finished"))
 	set_process(true)
 
 
 func stop() -> void:
 	event_bus.unsubscribe(&"tts.requested", Callable(self, "_on_tts_requested"))
 	event_bus.unsubscribe(&"tts.cancel_requested", Callable(self, "_on_tts_cancel_requested"))
+	event_bus.unsubscribe(&"voice.live_audio_started", Callable(self, "_on_live_audio_started"))
+	event_bus.unsubscribe(&"voice.live_audio_chunk", Callable(self, "_on_live_audio_chunk"))
+	event_bus.unsubscribe(&"voice.live_audio_finished", Callable(self, "_on_live_audio_finished"))
 	# Drop generator playback references before detaching their streams. This is
 	# important on WASAPI/Dummy alike: an AudioStreamGeneratorPlayback can remain
 	# referenced by the player until `stream` is explicitly cleared.
@@ -99,6 +108,7 @@ func stop() -> void:
 	_cancelled_speech_ids.clear()
 	_voice_latency_requests.clear()
 	_voice_latency_speech.clear()
+	_live_speech_ids.clear()
 	set_process(false)
 	_disconnect_bridge()
 	_queue.clear()
@@ -158,6 +168,44 @@ func _disconnect_bridge() -> void:
 	if bridge.has_signal("speech_finished") and bridge.is_connected("speech_finished", Callable(self, "_on_bridge_speech_finished")):
 		bridge.disconnect("speech_finished", Callable(self, "_on_bridge_speech_finished"))
 	bridge = null
+
+
+func _on_live_audio_started(payload: Dictionary) -> void:
+	var speech_id := str(payload.get("speech_id", "")).strip_edges()
+	if speech_id.is_empty() or _live_speech_ids.has(speech_id):
+		return
+	var sample_rate := int(payload.get("sample_rate", 24000))
+	if sample_rate != 24000:
+		return
+	var request := {
+		"message_id": str(payload.get("turn_id", speech_id)),
+		"chunk_index": 0,
+		"final": true,
+		"speech_id": speech_id,
+		"companion_id": "default",
+		"text": "",
+		"streaming": true,
+		"sample_rate": sample_rate,
+		"channels": 1,
+		"sample_width": 2,
+	}
+	_live_speech_ids[speech_id] = true
+	_accept_stream_speech_started(request, "default", speech_id, "", sample_rate, 1, 2)
+
+
+func _on_live_audio_chunk(payload: Dictionary) -> void:
+	var speech_id := str(payload.get("speech_id", "")).strip_edges()
+	var audio_value: Variant = payload.get("audio", PackedByteArray())
+	if speech_id.is_empty() or not _live_speech_ids.has(speech_id) or not (audio_value is PackedByteArray):
+		return
+	_on_bridge_speech_audio_chunk(speech_id, audio_value as PackedByteArray)
+
+
+func _on_live_audio_finished(payload: Dictionary) -> void:
+	var speech_id := str(payload.get("speech_id", "")).strip_edges()
+	if speech_id.is_empty() or not _live_speech_ids.has(speech_id):
+		return
+	_on_bridge_speech_stream_finished(speech_id, "default", str(payload.get("outcome", "finished")))
 
 
 func _on_tts_requested(payload: Dictionary) -> void:
@@ -259,7 +307,10 @@ func _on_tts_cancel_requested(payload: Dictionary) -> void:
 		if _request_matches_cancel(request, message_id, speech_id):
 			var ready_speech_id := str(request.get("speech_id", ""))
 			if not ready_speech_id.is_empty():
-				_cancelled_speech_ids[ready_speech_id] = true
+				var ready_was_live := _live_speech_ids.has(ready_speech_id)
+				if not ready_was_live:
+					_cancelled_speech_ids[ready_speech_id] = true
+				_live_speech_ids.erase(ready_speech_id)
 				_cleanup_speech_state(ready_speech_id)
 			_publish_interrupted(request, reason)
 		else:
@@ -270,7 +321,10 @@ func _on_tts_cancel_requested(payload: Dictionary) -> void:
 		var active := _playback.duplicate(true)
 		var active_speech_id := str(active.get("speech_id", ""))
 		if not active_speech_id.is_empty():
-			_cancelled_speech_ids[active_speech_id] = true
+			var active_was_live := _live_speech_ids.has(active_speech_id)
+			if not active_was_live:
+				_cancelled_speech_ids[active_speech_id] = true
+			_live_speech_ids.erase(active_speech_id)
 			_cleanup_speech_state(active_speech_id)
 		_playback.clear()
 		_publish_interrupted(active, reason)
@@ -1108,6 +1162,10 @@ func _on_player_finished(speech_id: String, companion_id: String) -> void:
 
 
 func _report_speech_finished(speech_id: String, companion_id: String, outcome: String) -> void:
+	if _live_speech_ids.has(speech_id):
+		_live_speech_ids.erase(speech_id)
+		_on_bridge_speech_finished(speech_id, companion_id, outcome)
+		return
 	if is_instance_valid(bridge) and bridge.has_method("report_speech_finished"):
 		bridge.call("report_speech_finished", speech_id, companion_id, outcome)
 	else:
