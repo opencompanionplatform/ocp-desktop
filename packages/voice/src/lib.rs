@@ -15,6 +15,11 @@
 
 #![forbid(unsafe_code)]
 
+pub mod vad;
+pub use vad::{
+    pcm16_energy, VadConfig, VadDecision, VadState, VadTransition, VoiceActivityDetector,
+};
+
 use ocp_audio_store::AudioStore;
 use ocp_llm_router::types::{
     CallerContext, Capability, ContentPart, CostClass, Limits, Message, Role, RoutePolicy,

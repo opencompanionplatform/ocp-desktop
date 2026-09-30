@@ -65,6 +65,7 @@ export type RuntimeBridgeCommand =
   | Readonly<{ type: "chat.message.regenerate" | "chat.message.read-aloud"; messageId: string; expectedRevision: number }>
   | Readonly<{ type: "chat.turn.cancel" | "chat.session.new"; expectedRevision: number }>
   | Readonly<{ type: "chat.reconnect" | "chat.session.clear" }>
+  | Readonly<{ type: "voice.input.start" | "voice.input.stop" }>
   | Readonly<{ type: "account.sign-out" | "cloud.library.refresh" | "cloud.sync.now" }>
   | Readonly<{ type: "cloud.library.install"; packageId: string; version: string }>;
 export type RuntimeSystemCommand =

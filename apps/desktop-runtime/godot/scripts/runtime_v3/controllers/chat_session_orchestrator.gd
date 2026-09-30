@@ -33,6 +33,7 @@ func start() -> void:
 	event_bus.subscribe(&"tts.finished", Callable(self, "_on_tts_finished"))
 	event_bus.subscribe(&"tts.failed", Callable(self, "_on_tts_failed"))
 	event_bus.subscribe(&"tts.interrupted", Callable(self, "_on_tts_interrupted"))
+	event_bus.subscribe(&"voice.user_speech_started", Callable(self, "_on_voice_user_speech_started"))
 
 
 func stop() -> void:
@@ -45,6 +46,7 @@ func stop() -> void:
 	event_bus.unsubscribe(&"tts.finished", Callable(self, "_on_tts_finished"))
 	event_bus.unsubscribe(&"tts.failed", Callable(self, "_on_tts_failed"))
 	event_bus.unsubscribe(&"tts.interrupted", Callable(self, "_on_tts_interrupted"))
+	event_bus.unsubscribe(&"voice.user_speech_started", Callable(self, "_on_voice_user_speech_started"))
 	_stream_text_by_message.clear()
 	_bubble_chunkers.clear()
 	_tts_chunkers.clear()
@@ -91,6 +93,15 @@ func _interrupt_active_response(next_message_id: String) -> void:
 	_tts_pause_generation.erase(previous_message_id)
 	_tts_speaking_latched.erase(previous_message_id)
 	_active_message_id = ""
+
+
+func _on_voice_user_speech_started(payload: Dictionary) -> void:
+	if _active_message_id.is_empty():
+		return
+	var session_id := str(payload.get("session_id", "")).strip_edges()
+	if session_id.is_empty():
+		session_id = "voice"
+	_interrupt_active_response("voice:%s" % session_id.left(96))
 
 
 func _on_prompt_requested(payload: Dictionary) -> void:

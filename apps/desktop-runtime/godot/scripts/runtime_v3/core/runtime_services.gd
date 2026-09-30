@@ -8,6 +8,7 @@ var registry_service: Node
 var settings_service: Node
 var ai_service: Node
 var tts_service: Node
+var voice_input_service: Node
 var memory_service: Node
 var credential_service: Node
 var cloud_session_service: Node
@@ -43,6 +44,7 @@ func register_service(service_name: StringName, service: Node) -> void:
 		&"settings": settings_service = service
 		&"ai": ai_service = service
 		&"tts": tts_service = service
+		&"voice_input": voice_input_service = service
 		&"memory": memory_service = service
 		&"credentials": credential_service = service
 		&"cloud_session": cloud_session_service = service

@@ -53,7 +53,13 @@ function EditComposer({ cancelLabel, saveLabel }: Readonly<{ cancelLabel: string
   </ComposerPrimitive.Root>;
 }
 
-function Composer({ placeholder, labels }: Readonly<{ placeholder: string; labels: Readonly<Record<string, string>> }>): ReactElement {
+function Composer({ placeholder, labels, dictationActive, dictationDisabled, onDictationToggle }: Readonly<{
+  placeholder: string;
+  labels: Readonly<Record<string, string>>;
+  dictationActive: boolean;
+  dictationDisabled: boolean;
+  onDictationToggle: () => void;
+}>): ReactElement {
   return <ComposerPrimitive.Root className="gpt-composer">
     <div className="gpt-composer-row">
       <IconButton disabled label={labels.attachment}><Plus size={20} /></IconButton>
@@ -66,7 +72,7 @@ function Composer({ placeholder, labels }: Readonly<{ placeholder: string; label
           <ComposerPrimitive.Send aria-label={labels.send} className="gpt-primary-action" title={labels.send}><ArrowUp size={21} /></ComposerPrimitive.Send>
         </AuiIf>
         <AuiIf condition={(state) => !state.thread.isRunning && state.composer.isEmpty}>
-          <IconButton disabled label={labels.dictation}><Mic size={19} /></IconButton>
+          <IconButton className={dictationActive ? "is-current" : ""} disabled={dictationDisabled} label={dictationActive ? labels.dictationStop : labels.dictationStart} onClick={onDictationToggle}><Mic size={19} /></IconButton>
         </AuiIf>
       </div>
     </div>
@@ -170,6 +176,31 @@ export function ChatView({ runtime, locale, storeAvailable = false }: ChatViewPr
   const send = useCallback(async (command: RuntimeBridgeCommand): Promise<void> => {
     await window.ocpShell.sendRuntimeCommand(command);
   }, []);
+  const [dictationActive, setDictationActive] = useState(false);
+  const [dictationBusy, setDictationBusy] = useState(false);
+  const toggleDictation = useCallback(async (): Promise<void> => {
+    if (!runtime || dictationBusy) return;
+    setDictationBusy(true);
+    try {
+      if (dictationActive) {
+        await send({ type: "voice.input.stop" });
+        setDictationActive(false);
+      } else {
+        await send({ type: "voice.input.start" });
+        setDictationActive(true);
+      }
+    } catch {
+      setDictationActive(false);
+    } finally {
+      setDictationBusy(false);
+    }
+  }, [dictationActive, dictationBusy, runtime, send]);
+  useEffect(() => () => {
+    void window.ocpShell.sendRuntimeCommand({ type: "voice.input.stop" }).catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    if (!runtime) setDictationActive(false);
+  }, [runtime]);
   const onSubmit = useCallback(async (prompt: string): Promise<void> => {
     if (!canSubmit) throw new Error("OCP Runtime Chat is not ready");
     await send({ type: "chat.submit", prompt });
@@ -201,7 +232,8 @@ export function ChatView({ runtime, locale, storeAvailable = false }: ChatViewPr
     write: t("chat.write", "Write a message"),
     stop: t("chat.stop", "Stop generating"),
     send: t("chat.send", "Send"),
-    dictation: t("chat.dictation_unavailable", "Dictation is not available in this build"),
+    dictationStart: t("chat.dictation_start", "Start voice input"),
+    dictationStop: t("chat.dictation_stop", "Stop voice input"),
   };
   const placeholder = !runtime || runtime.chat.status === "offline" || runtime.chat.status === "failed"
     ? t("chat.connect_to_write", "Connect the Runtime AI provider to write a message")
@@ -266,7 +298,7 @@ export function ChatView({ runtime, locale, storeAvailable = false }: ChatViewPr
         <ThreadPrimitive.Root className="gpt-thread">
           {messages.length === 0 ? <section className="gpt-empty-state">
             <h1>{t("chat.empty_title_literal", "Where should we begin?")}</h1>
-            <Composer labels={labels} placeholder={placeholder} />
+            <Composer dictationActive={dictationActive} dictationDisabled={dictationBusy || !runtime} labels={labels} onDictationToggle={() => { void toggleDictation(); }} placeholder={placeholder} />
           </section> : <ThreadPrimitive.Viewport className="gpt-viewport">
             <ThreadPrimitive.Messages>{({ message }) => {
               if (message.composer.isEditing) return <EditComposer cancelLabel={t("common.cancel", "Cancel")} saveLabel={t("common.save", "Save")} />;
@@ -300,7 +332,7 @@ export function ChatView({ runtime, locale, storeAvailable = false }: ChatViewPr
             {isRunning && !messages.some((message) => message.role === "assistant" && message.status === "streaming") && <div className="gpt-thinking" role="status"><span /><span /><span /></div>}
             <ThreadPrimitive.ViewportFooter className="gpt-viewport-footer">
               <ThreadPrimitive.ScrollToBottom aria-label={t("chat.scroll_bottom", "Scroll to bottom")} className="gpt-scroll-bottom" title={t("chat.scroll_bottom", "Scroll to bottom")}><ChevronDown size={19} /></ThreadPrimitive.ScrollToBottom>
-              <Composer labels={labels} placeholder={placeholder} />
+              <Composer dictationActive={dictationActive} dictationDisabled={dictationBusy || !runtime} labels={labels} onDictationToggle={() => { void toggleDictation(); }} placeholder={placeholder} />
               <p>{t("chat.disclaimer", "OCP can make mistakes. Check important info.")}</p>
             </ThreadPrimitive.ViewportFooter>
           </ThreadPrimitive.Viewport>}

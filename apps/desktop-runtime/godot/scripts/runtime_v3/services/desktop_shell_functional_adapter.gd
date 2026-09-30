@@ -623,6 +623,8 @@ func _handle_command(command: Dictionary, correlation_id: String = "") -> void:
 			result = _read_chat_message_aloud(command)
 		"chat.session.new":
 			result = _new_chat_session(command)
+		"voice.input.start", "voice.input.stop":
+			result = _set_voice_input(command)
 		"account.sign-out":
 			result = _sign_out_account(command)
 		"cloud.library.refresh":
@@ -648,7 +650,7 @@ func _handle_command(command: Dictionary, correlation_id: String = "") -> void:
 			result = {"status": "failed", "errorCode": "unsupported-command"}
 	# Control Center commands use correlated results. Existing character/chat
 	# commands keep their established fire-and-project behaviour.
-	if command_type in ["control.settings.update", "control.ai.update", "control.ai.test", "control.ai.discover", "control.voice.test", "control.update.check", "control.update.apply", "control.update.install-on-restart", "character.effects.update", "character.effects.preview-level-up", "effect-pack.equip", "effect-pack.unequip", "effect-pack.slot-enabled", "effect-pack.preview", "effect-pack.preview-tune", "effect-pack.character-profile.save", "effect-pack.character-profile.reset", "effect-pack.preview-rank", "chat.reconnect", "chat.session.clear", "chat.turn.cancel", "chat.message.edit", "chat.message.regenerate", "chat.feedback.set", "chat.message.read-aloud", "chat.session.new", "account.sign-out", "cloud.library.refresh", "cloud.library.install", "cloud.sync.now"]:
+	if command_type in ["control.settings.update", "control.ai.update", "control.ai.test", "control.ai.discover", "control.voice.test", "control.update.check", "control.update.apply", "control.update.install-on-restart", "character.effects.update", "character.effects.preview-level-up", "effect-pack.equip", "effect-pack.unequip", "effect-pack.slot-enabled", "effect-pack.preview", "effect-pack.preview-tune", "effect-pack.character-profile.save", "effect-pack.character-profile.reset", "effect-pack.preview-rank", "chat.reconnect", "chat.session.clear", "chat.turn.cancel", "chat.message.edit", "chat.message.regenerate", "chat.feedback.set", "chat.message.read-aloud", "chat.session.new", "voice.input.start", "voice.input.stop", "account.sign-out", "cloud.library.refresh", "cloud.library.install", "cloud.sync.now"]:
 		_record_command_result(correlation_id, command_type, result)
 	_write_snapshot()
 
@@ -1759,6 +1761,24 @@ func _new_chat_session(command: Dictionary) -> Dictionary:
 	chat_session_id = _new_chat_session_id()
 	chat_revision += 1
 	chat_status = _chat_status_from_provider()
+	return {"status": "succeeded", "errorCode": ""}
+
+
+func _set_voice_input(command: Dictionary) -> Dictionary:
+	if not _has_only_keys(command, ["type"]) or command.size() != 1:
+		return {"status": "failed", "errorCode": "invalid-voice-input-command"}
+	var command_type := str(command.get("type", ""))
+	if command_type not in ["voice.input.start", "voice.input.stop"]:
+		return {"status": "failed", "errorCode": "invalid-voice-input-command"}
+	var voice_input := _service(&"voice_input_service")
+	if not is_instance_valid(voice_input):
+		return {"status": "failed", "errorCode": "voice-input-unavailable"}
+	if command_type == "voice.input.start":
+		event_bus.publish(&"voice.input_start_requested", {})
+		if not bool(voice_input.get("capture_active")):
+			return {"status": "failed", "errorCode": "voice-input-unavailable"}
+	else:
+		event_bus.publish(&"voice.input_stop_requested", {})
 	return {"status": "succeeded", "errorCode": ""}
 
 

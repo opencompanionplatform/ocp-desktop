@@ -75,6 +75,10 @@ use ocp_kernel::companion_physics_binding::{
 use ocp_llm_router::adapter::{
     ProviderAdapter, StreamingSynthesizer, Synthesizer, TtsAdapter, WindowsSynthesizer,
 };
+use ocp_llm_router::providers::gemini_asr::{
+    start_live_asr, GeminiAsrEvent, GeminiLiveAsrControl, LIVE_TRANSCRIBE_MODEL,
+    LIVE_TRANSCRIBE_SAMPLE_RATE,
+};
 use ocp_llm_router::providers::gemini_tts::{self, GeminiSynthesizer, VoiceGender};
 use ocp_llm_router::providers::openrouter::OpenRouterAdapter;
 use ocp_llm_router::types::{
@@ -89,6 +93,7 @@ use ocp_package_loader::{load as load_package, TrustStore};
 use ocp_shared_types::{Envelope, Point2};
 use ocp_voice::{synthesize_speech_request, SpeakRequest};
 use serde_json::json;
+use uuid::Uuid;
 
 /// The shared audio directory the kernel mirrors synthesized clips into, byte-
 /// identical to the runtime bridge's `audio_clip_path` (`OCP_AUDIO_DIR`, else
@@ -971,6 +976,204 @@ fn gemini_key() -> Option<String> {
 /// handshake replaces the previous one — deterministic across runtime
 /// restarts, no guessing from connect order.
 type Presentation = Arc<Mutex<Option<Connection>>>;
+
+const RUNTIME_ASR_MAX_PCM_BYTES: usize = 64 * 1024;
+
+fn runtime_asr_session_id(env: &Envelope) -> Option<String> {
+    let value = env
+        .data
+        .get("sessionId")
+        .and_then(serde_json::Value::as_str)?
+        .trim();
+    if value.is_empty()
+        || value.len() > 128
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return None;
+    }
+    Some(value.to_owned())
+}
+
+fn runtime_asr_language_codes(env: &Envelope) -> Vec<String> {
+    env.data
+        .get("languageCodes")
+        .and_then(serde_json::Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty() && value.len() <= 32)
+                .take(4)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn runtime_asr_event_envelope(
+    session_id: &str,
+    correlation_id: Uuid,
+    event: &GeminiAsrEvent,
+) -> Option<Envelope> {
+    let (event_type, data) = match event {
+        GeminiAsrEvent::Ready => (
+            "ocp.voice.asr-ready",
+            json!({
+                "sessionId": session_id,
+                "providerId": "gemini-live",
+                "modelId": LIVE_TRANSCRIBE_MODEL,
+                "sampleRate": LIVE_TRANSCRIBE_SAMPLE_RATE,
+            }),
+        ),
+        GeminiAsrEvent::Interim(text) => (
+            "ocp.voice.asr-interim",
+            json!({"sessionId": session_id, "text": text}),
+        ),
+        GeminiAsrEvent::Final(text) => (
+            "ocp.voice.asr-final",
+            json!({"sessionId": session_id, "text": text}),
+        ),
+        GeminiAsrEvent::TurnComplete => (
+            "ocp.voice.asr-turn-complete",
+            json!({"sessionId": session_id}),
+        ),
+        GeminiAsrEvent::Interrupted => (
+            "ocp.voice.asr-interrupted",
+            json!({"sessionId": session_id}),
+        ),
+        GeminiAsrEvent::Error(reason) => (
+            "ocp.voice.asr-error",
+            json!({"sessionId": session_id, "reasonCode": reason}),
+        ),
+        GeminiAsrEvent::Closed => ("ocp.voice.asr-closed", json!({"sessionId": session_id})),
+    };
+    Envelope::new(event_type, "kernel", data)
+        .ok()
+        .map(|envelope| envelope.with_correlation(correlation_id))
+}
+
+fn push_runtime_asr_error(
+    presentation: &Presentation,
+    session_id: &str,
+    correlation_id: Uuid,
+    reason_code: &'static str,
+) {
+    if let Ok(envelope) = Envelope::new(
+        "ocp.voice.asr-error",
+        "kernel",
+        json!({"sessionId": session_id, "reasonCode": reason_code}),
+    ) {
+        push(presentation, &envelope.with_correlation(correlation_id));
+    }
+}
+
+fn start_runtime_asr(
+    env: &Envelope,
+    presentation: &Presentation,
+) -> Option<(String, GeminiLiveAsrControl)> {
+    let Some(session_id) = runtime_asr_session_id(env) else {
+        push_runtime_asr_error(presentation, "invalid", env.id, "invalid-session-id");
+        return None;
+    };
+    let Some(api_key) = gemini_key() else {
+        push_runtime_asr_error(
+            presentation,
+            &session_id,
+            env.id,
+            "provider-credential-required",
+        );
+        return None;
+    };
+    let language_codes = runtime_asr_language_codes(env);
+    let Ok((control, events)) = start_live_asr(api_key, language_codes) else {
+        push_runtime_asr_error(presentation, &session_id, env.id, "asr-start-failed");
+        return None;
+    };
+
+    let pump_control = control.clone();
+    let pump_presentation = Arc::clone(presentation);
+    let pump_session_id = session_id.clone();
+    let correlation_id = env.id;
+    let spawn = thread::Builder::new()
+        .name("ocp-runtime-asr-events".to_owned())
+        .spawn(move || {
+            while let Some(event) = events.recv() {
+                // Live transcription's inputTranscription is the finalized
+                // utterance. Some sessions do not emit turnComplete after a
+                // final transcript, so Final must terminate the provider turn
+                // as well or the worker/socket can remain open unnecessarily.
+                let terminal = matches!(
+                    event,
+                    GeminiAsrEvent::Final(_)
+                        | GeminiAsrEvent::TurnComplete
+                        | GeminiAsrEvent::Error(_)
+                        | GeminiAsrEvent::Closed
+                );
+                if let Some(envelope) =
+                    runtime_asr_event_envelope(&pump_session_id, correlation_id, &event)
+                {
+                    push(&pump_presentation, &envelope);
+                }
+                if terminal {
+                    let _ = pump_control.close();
+                    break;
+                }
+            }
+            events.join();
+        });
+    if spawn.is_err() {
+        let _ = control.close();
+        push_runtime_asr_error(presentation, &session_id, env.id, "asr-pump-start-failed");
+        return None;
+    }
+    let _ = control.activity_start();
+    Some((session_id, control))
+}
+
+fn runtime_asr_audio(env: &Envelope, active: &Option<(String, GeminiLiveAsrControl)>) -> bool {
+    let Some(session_id) = runtime_asr_session_id(env) else {
+        return false;
+    };
+    let Some((active_id, control)) = active else {
+        return false;
+    };
+    if active_id != &session_id
+        || env
+            .data
+            .get("sampleRate")
+            .and_then(serde_json::Value::as_u64)
+            != Some(u64::from(LIVE_TRANSCRIBE_SAMPLE_RATE))
+    {
+        return false;
+    }
+    let Some(encoded) = env
+        .data
+        .get("pcmBase64")
+        .and_then(serde_json::Value::as_str)
+    else {
+        return false;
+    };
+    let Ok(pcm) = base64::engine::general_purpose::STANDARD.decode(encoded) else {
+        return false;
+    };
+    if pcm.is_empty() || pcm.len() > RUNTIME_ASR_MAX_PCM_BYTES || pcm.len() % 2 != 0 {
+        return false;
+    }
+    control.send_pcm16(pcm)
+}
+
+fn runtime_asr_end(env: &Envelope, active: &Option<(String, GeminiLiveAsrControl)>) -> bool {
+    let Some(session_id) = runtime_asr_session_id(env) else {
+        return false;
+    };
+    let Some((active_id, control)) = active else {
+        return false;
+    };
+    active_id == &session_id && control.activity_end()
+}
 
 /// One Behavior Engine per companion, created lazily on first delivery —
 /// ADR-0013 §2's "many logical state machines multiplexed through one
@@ -2082,6 +2285,7 @@ fn drain_outcomes(
     bindings: CompanionPhysicsBindings,
     audio_store: Arc<AudioStore>,
 ) {
+    let mut runtime_asr: Option<(String, GeminiLiveAsrControl)> = None;
     loop {
         match recv_envelope(&mut conn) {
             Ok(env) => {
@@ -2176,6 +2380,49 @@ fn drain_outcomes(
                     continue;
                 }
 
+                if env.event_type == "ocp.runtime.asr-start" {
+                    if let Some((_, previous)) = runtime_asr.take() {
+                        let _ = previous.close();
+                    }
+                    runtime_asr = start_runtime_asr(&env, &presentation);
+                    continue;
+                }
+
+                if env.event_type == "ocp.runtime.asr-audio" {
+                    if !runtime_asr_audio(&env, &runtime_asr) {
+                        let session_id =
+                            runtime_asr_session_id(&env).unwrap_or_else(|| "invalid".to_owned());
+                        push_runtime_asr_error(
+                            &presentation,
+                            &session_id,
+                            env.id,
+                            "invalid-audio-frame",
+                        );
+                    }
+                    continue;
+                }
+
+                if env.event_type == "ocp.runtime.asr-end" {
+                    if !runtime_asr_end(&env, &runtime_asr) {
+                        let session_id =
+                            runtime_asr_session_id(&env).unwrap_or_else(|| "invalid".to_owned());
+                        push_runtime_asr_error(
+                            &presentation,
+                            &session_id,
+                            env.id,
+                            "asr-session-unavailable",
+                        );
+                    } else {
+                        // The event-pump thread owns a cloned control handle and
+                        // keeps the provider session alive until TurnComplete.
+                        // Clear the main-loop slot immediately so a new VAD turn
+                        // can start without closing the previous turn before its
+                        // final transcript arrives.
+                        runtime_asr = None;
+                    }
+                    continue;
+                }
+
                 if env.event_type == "ocp.runtime.tts-requested" {
                     // Gemini 3.1 Flash TTS can stream audio deltas. Use that
                     // path first; only fall back to the existing whole-WAV
@@ -2201,6 +2448,9 @@ fn drain_outcomes(
             Err(IpcError::Io(_)) => break, // peer done
             Err(e) => eprintln!("[kernel] dropped bad frame (SEC-041): {e}"),
         }
+    }
+    if let Some((_, control)) = runtime_asr.take() {
+        let _ = control.close();
     }
 }
 

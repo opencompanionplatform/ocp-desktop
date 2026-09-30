@@ -57,6 +57,7 @@ use ocp_runtime_api::{
     LookAtCursorRequested, Position, SpeechRequested, WindowPolicy,
 };
 use ocp_shared_types::Envelope;
+use ocp_voice::{VadConfig, VadState, VadTransition, VoiceActivityDetector};
 
 mod credential_broker;
 
@@ -537,6 +538,7 @@ pub struct OcpRuntimeBridge {
     worker_threads: Vec<thread::JoinHandle<()>>,
     resource_system: System,
     credential_broker: Option<credential_broker::CredentialBroker>,
+    voice_vad: VoiceActivityDetector,
 }
 
 /// The local WAV path for an `audioRef` id (I7 V1 slice 4b, file-backed audio
@@ -746,6 +748,7 @@ impl INode for OcpRuntimeBridge {
             worker_threads: Vec::new(),
             resource_system: System::new(),
             credential_broker: None,
+            voice_vad: VoiceActivityDetector::new(VadConfig::default()),
         }
     }
 
@@ -775,8 +778,9 @@ impl INode for OcpRuntimeBridge {
         self.worker_threads.push(thread::spawn(move || {
             read_loop(read_socket, read_token, in_tx, read_stop)
         }));
-        self.worker_threads
-            .push(thread::spawn(move || write_loop(socket_name, token, out_rx)));
+        self.worker_threads.push(thread::spawn(move || {
+            write_loop(socket_name, token, out_rx)
+        }));
     }
 
     fn process(&mut self, _delta: f64) {
@@ -1241,6 +1245,130 @@ impl OcpRuntimeBridge {
             .is_some_and(|sender| sender.send(env).is_ok())
     }
 
+    /// Reset the allocation-free client-side voice activity detector.
+    #[func]
+    fn voice_vad_reset(&mut self) {
+        self.voice_vad.reset();
+    }
+
+    /// Process one PCM16 little-endian mono frame locally. Return codes are
+    /// intentionally scalar for cheap Godot calls: -1 invalid, 0 silence,
+    /// 1 speech-started, 2 speech-active, 3 speech-ended.
+    #[func]
+    fn voice_vad_process_pcm16(&mut self, pcm: PackedByteArray) -> i64 {
+        let bytes = pcm.as_slice();
+        if bytes.is_empty() || bytes.len() > 64 * 1024 || bytes.len() % 2 != 0 {
+            return -1;
+        }
+        let decision = self.voice_vad.process_pcm16_le_bytes(bytes);
+        match decision.transition {
+            Some(VadTransition::SpeechStarted) => 1,
+            Some(VadTransition::SpeechEnded) => 3,
+            None if decision.state == VadState::Speech => 2,
+            None => 0,
+        }
+    }
+
+    /// Start one client-VAD-controlled live ASR turn. The Gemini credential
+    /// remains Kernel-side; Runtime sends only a bounded session id and optional
+    /// BCP-47 language hints.
+    #[func]
+    fn request_asr_start(
+        &mut self,
+        session_id: GString,
+        language_codes: PackedStringArray,
+    ) -> bool {
+        let session_id = session_id.to_string();
+        let session_id = session_id.trim();
+        if session_id.is_empty() || session_id.len() > 128 {
+            return false;
+        }
+        let languages: Vec<String> = language_codes
+            .as_slice()
+            .iter()
+            .map(ToString::to_string)
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty() && value.len() <= 32)
+            .take(4)
+            .collect();
+        let Ok(env) = Envelope::new(
+            "ocp.runtime.asr-start",
+            "runtime",
+            serde_json::json!({
+                "schemaVersion": 1,
+                "sessionId": session_id,
+                "languageCodes": languages,
+            }),
+        ) else {
+            return false;
+        };
+        self.outbox
+            .as_ref()
+            .is_some_and(|sender| sender.send(env).is_ok())
+    }
+
+    /// Send one mono PCM16 audio chunk to the active ASR turn. Chunks are
+    /// bounded before base64 encoding to keep IPC envelopes small and prevent
+    /// accidental retention of long microphone buffers.
+    #[func]
+    fn request_asr_audio(
+        &mut self,
+        session_id: GString,
+        pcm: PackedByteArray,
+        sample_rate: i64,
+    ) -> bool {
+        let session_id = session_id.to_string();
+        let session_id = session_id.trim();
+        let bytes = pcm.as_slice();
+        if session_id.is_empty()
+            || session_id.len() > 128
+            || sample_rate != 16_000
+            || bytes.is_empty()
+            || bytes.len() > 64 * 1024
+            || bytes.len() % 2 != 0
+        {
+            return false;
+        }
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let Ok(env) = Envelope::new(
+            "ocp.runtime.asr-audio",
+            "runtime",
+            serde_json::json!({
+                "schemaVersion": 1,
+                "sessionId": session_id,
+                "sampleRate": sample_rate,
+                "pcmBase64": encoded,
+            }),
+        ) else {
+            return false;
+        };
+        self.outbox
+            .as_ref()
+            .is_some_and(|sender| sender.send(env).is_ok())
+    }
+
+    #[func]
+    fn request_asr_end(&mut self, session_id: GString) -> bool {
+        let session_id = session_id.to_string();
+        let session_id = session_id.trim();
+        if session_id.is_empty() || session_id.len() > 128 {
+            return false;
+        }
+        let Ok(env) = Envelope::new(
+            "ocp.runtime.asr-end",
+            "runtime",
+            serde_json::json!({
+                "schemaVersion": 1,
+                "sessionId": session_id,
+            }),
+        ) else {
+            return false;
+        };
+        self.outbox
+            .as_ref()
+            .is_some_and(|sender| sender.send(env).is_ok())
+    }
+
     /// Submit one non-streaming cloud chat turn to Kernel. Provider credentials
     /// stay in the OS keystore; Godot sends only display-safe prompt/config.
     // Godot ABI surface: explicit scalar parameters keep the script contract
@@ -1314,6 +1442,30 @@ impl OcpRuntimeBridge {
 
     #[signal]
     fn speech_route_diagnostic(speech_id: GString, reason_code: GString);
+
+    /// Voice Realtime V2 input transcription lifecycle. These signals contain
+    /// only session ids, transcript text and route metadata; provider
+    /// credentials never cross the Kernel/Runtime boundary.
+    #[signal]
+    fn asr_ready(session_id: GString, provider_id: GString, model_id: GString, sample_rate: i64);
+
+    #[signal]
+    fn asr_interim(session_id: GString, text: GString);
+
+    #[signal]
+    fn asr_final(session_id: GString, text: GString);
+
+    #[signal]
+    fn asr_turn_complete(session_id: GString);
+
+    #[signal]
+    fn asr_interrupted(session_id: GString);
+
+    #[signal]
+    fn asr_error(session_id: GString, reason_code: GString);
+
+    #[signal]
+    fn asr_closed(session_id: GString);
 
     /// Internal bridge lifecycle used by RuntimeV3TTSService. `speech_started`
     /// fires before the existing `speech_requested` presentation signal so the
@@ -2077,6 +2229,110 @@ impl OcpRuntimeBridge {
                     );
                 }
             }
+            "ocp.voice.asr-ready" => {
+                let session_id = env
+                    .data
+                    .get("sessionId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let provider_id = env
+                    .data
+                    .get("providerId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("gemini-live");
+                let model_id = env
+                    .data
+                    .get("modelId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let sample_rate = env
+                    .data
+                    .get("sampleRate")
+                    .and_then(serde_json::Value::as_i64)
+                    .unwrap_or(16_000);
+                self.base_mut().emit_signal(
+                    "asr_ready",
+                    &[
+                        session_id.to_variant(),
+                        provider_id.to_variant(),
+                        model_id.to_variant(),
+                        sample_rate.to_variant(),
+                    ],
+                );
+            }
+            "ocp.voice.asr-interim" => {
+                let session_id = env
+                    .data
+                    .get("sessionId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let text = env
+                    .data
+                    .get("text")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let (clean, _) = sanitize_display_text(text);
+                self.base_mut().emit_signal(
+                    "asr_interim",
+                    &[session_id.to_variant(), clean.to_variant()],
+                );
+            }
+            "ocp.voice.asr-final" => {
+                let session_id = env
+                    .data
+                    .get("sessionId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let text = env
+                    .data
+                    .get("text")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let (clean, _) = sanitize_display_text(text);
+                self.base_mut()
+                    .emit_signal("asr_final", &[session_id.to_variant(), clean.to_variant()]);
+            }
+            "ocp.voice.asr-turn-complete" => {
+                let session_id = env
+                    .data
+                    .get("sessionId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                self.base_mut()
+                    .emit_signal("asr_turn_complete", &[session_id.to_variant()]);
+            }
+            "ocp.voice.asr-interrupted" => {
+                let session_id = env
+                    .data
+                    .get("sessionId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                self.base_mut()
+                    .emit_signal("asr_interrupted", &[session_id.to_variant()]);
+            }
+            "ocp.voice.asr-error" => {
+                let session_id = env
+                    .data
+                    .get("sessionId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let reason = env
+                    .data
+                    .get("reasonCode")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("asr-unavailable");
+                self.base_mut()
+                    .emit_signal("asr_error", &[session_id.to_variant(), reason.to_variant()]);
+            }
+            "ocp.voice.asr-closed" => {
+                let session_id = env
+                    .data
+                    .get("sessionId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                self.base_mut()
+                    .emit_signal("asr_closed", &[session_id.to_variant()]);
+            }
             "ocp.behavior.bubble-requested" => {
                 let Ok(req) = serde_json::from_value::<BubbleRequested>(env.data.clone()) else {
                     return; // malformed payload: drop (SEC-041 already gated at ocp-ipc)
@@ -2500,12 +2756,7 @@ impl OcpRuntimeBridge {
 /// backoff on disconnect (RUNTIME_API §4.4). Malformed/invalid envelopes are
 /// dropped and the loop continues (SEC-041) — only an I/O failure ends the
 /// session.
-fn read_loop(
-    socket_name: String,
-    token: String,
-    in_tx: Sender<Inbound>,
-    stop: Arc<AtomicBool>,
-) {
+fn read_loop(socket_name: String, token: String, in_tx: Sender<Inbound>, stop: Arc<AtomicBool>) {
     while !stop.load(Ordering::Acquire) {
         match connect_authenticated_with_intent(&socket_name, &token, INTENT_SUBSCRIBE) {
             Ok(mut conn) => {
@@ -2688,7 +2939,9 @@ mod installer_tests {
         assert!(companion_movement_request_envelope("default", "hang-right").is_some());
         assert!(companion_movement_request_envelope("default", "hang-to-center").is_some());
         assert!(companion_movement_request_envelope("default", "hang-to-far-edge").is_some());
-        assert!(companion_movement_request_envelope("default", "hang-to-climb-down-edge").is_some());
+        assert!(
+            companion_movement_request_envelope("default", "hang-to-climb-down-edge").is_some()
+        );
         assert!(companion_movement_request_envelope("default", "climb-down").is_some());
         assert!(companion_movement_request_envelope("default", "detach").is_some());
         assert!(

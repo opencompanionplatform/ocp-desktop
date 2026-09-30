@@ -17,6 +17,7 @@ const RegistryServiceScript = preload("res://scripts/runtime_v3/services/registr
 const SettingsServiceScript = preload("res://scripts/runtime_v3/services/settings_service.gd")
 const AIServiceScript = preload("res://scripts/runtime_v3/services/ai_service.gd")
 const TTSServiceScript = preload("res://scripts/runtime_v3/services/tts_service.gd")
+const VoiceInputServiceScript = preload("res://scripts/runtime_v3/services/voice_input_service.gd")
 const MemoryServiceScript = preload("res://scripts/runtime_v3/services/memory_service.gd")
 const CredentialServiceScript = preload("res://scripts/runtime_v3/services/credential_service.gd")
 const CloudSessionServiceScript = preload("res://scripts/runtime_v3/services/cloud_session_service.gd")
@@ -457,6 +458,7 @@ func _create_services() -> void:
 		[&"settings", SettingsServiceScript],
 		[&"ai", AIServiceScript],
 		[&"tts", TTSServiceScript],
+		[&"voice_input", VoiceInputServiceScript],
 		[&"memory", MemoryServiceScript],
 		[&"credentials", CredentialServiceScript],
 		[&"cloud_session", CloudSessionServiceScript],
@@ -958,6 +960,8 @@ func _bind_rust_bridge_if_present() -> void:
 			services.ai_service.call("bind_bridge", bridge)
 		if is_instance_valid(services.tts_service):
 			services.tts_service.bind_bridge(bridge)
+		if is_instance_valid(services.voice_input_service):
+			services.voice_input_service.bind_bridge(bridge)
 		if is_instance_valid(services.credential_service):
 			services.credential_service.bind_bridge(bridge)
 		if is_instance_valid(services.cloud_auth_service):

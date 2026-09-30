@@ -59,12 +59,12 @@ describe("G16.26 Runtime-owned companion Chat view", () => {
     expect(markup).not.toContain("Cloud sharing");
   });
 
-  it("centers an empty composer and truthfully disables unapproved capabilities", () => {
+  it("centers an empty composer, keeps attachments disabled, and exposes approved voice input", () => {
     const markup = renderToStaticMarkup(<Chat locale="en" runtime={{ ...runtime, chat: { ...runtime.chat, messages: [] } }} />);
     expect(markup).toContain("Where should we begin?");
     expect(markup).toContain("gpt-empty-state");
     expect(markup).toContain("File and image attachments require an approved Runtime attachment contract");
-    expect(markup).toContain("Dictation is not available in this build");
+    expect(markup).toContain("Start voice input");
     expect(markup).toContain("Voice Mode");
     expect(markup).toContain("On demand");
     expect(markup).toContain("disabled");

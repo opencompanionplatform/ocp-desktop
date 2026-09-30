@@ -83,6 +83,16 @@ const TTS_FAILED: StringName = &"tts.failed"
 const TTS_INTERRUPTED: StringName = &"tts.interrupted"
 const TTS_LATENCY_MEASURED: StringName = &"tts.latency_measured"
 
+const VOICE_INPUT_START_REQUESTED: StringName = &"voice.input_start_requested"
+const VOICE_INPUT_STOP_REQUESTED: StringName = &"voice.input_stop_requested"
+const VOICE_INPUT_STATE_CHANGED: StringName = &"voice.input_state_changed"
+const VOICE_USER_SPEECH_STARTED: StringName = &"voice.user_speech_started"
+const VOICE_ASR_READY: StringName = &"voice.asr_ready"
+const VOICE_ASR_INTERRUPTED: StringName = &"voice.asr_interrupted"
+const VOICE_ASR_CLOSED: StringName = &"voice.asr_closed"
+const VOICE_TRANSCRIPT_INTERIM: StringName = &"voice.transcript_interim"
+const VOICE_TRANSCRIPT_FINAL: StringName = &"voice.transcript_final"
+
 const MEMORY_READ_REQUESTED: StringName = &"memory.read_requested"
 const MEMORY_WRITE_REQUESTED: StringName = &"memory.write_requested"
 

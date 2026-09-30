@@ -62,6 +62,10 @@ keyring = { version = "4", features = ["v1"] }
 # (`audio/L16;codec=pcm;rate=24000`), which `providers::gemini_tts` decodes
 # before wrapping into a WAV. Pure-Rust, no unsafe.
 base64 = "0.22"
+# Voice Realtime V2 ASR: Gemini Live transcription is a bidirectional WebSocket
+# API. Keep the blocking client on a dedicated Kernel worker thread; native-tls
+# uses the platform certificate store, matching the existing ureq cloud path.
+tungstenite = { version = "0.30", default-features = false, features = ["handshake", "native-tls"] }
 
 [dev-dependencies]
 # Only the `examples/store_credential.rs` CLI tool needs this (hides the

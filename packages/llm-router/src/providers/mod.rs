@@ -32,6 +32,7 @@
 
 pub mod claude;
 pub mod gemini;
+pub mod gemini_asr;
 pub mod gemini_tts;
 pub mod ollama;
 pub mod openai;
