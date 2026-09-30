@@ -53,9 +53,11 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
-      - name: Build public plugin example fixture
+      - name: Build public plugin example fixtures
         shell: pwsh
-        run: .\examples\build_example.ps1
+        run: |
+          .\examples\build_example.ps1
+          .\examples\build_os_telemetry_monitor.ps1
       - name: Cargo test
         shell: pwsh
         run: cargo test --workspace --locked

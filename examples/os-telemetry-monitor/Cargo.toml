@@ -1,0 +1,16 @@
+[package]
+name = "os-telemetry-monitor"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Example OCP plugin — built against ocp-plugin-sdk only. Requests CPU/memory OS telemetry (PLUGIN_API §7a) and reacts to the host's os-telemetry-*-changed events. Compiles to wasm32-wasip1."
+publish = false
+
+# Excluded from the workspace: it targets wasm and depends only on the SDK,
+# proving the SEC-001 boundary (an author needs the SDK, not the kernel) —
+# same shape as ../hello-companion.
+[dependencies]
+ocp-plugin-sdk = { path = "../../packages/plugin-sdk" }
+
+[lib]
+crate-type = ["cdylib"]
