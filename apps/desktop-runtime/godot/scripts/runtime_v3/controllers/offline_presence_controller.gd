@@ -119,7 +119,7 @@ func _process(delta: float) -> void:
 		return
 
 	elapsed_seconds += delta
-	if elapsed_seconds < SCHEDULE_INTERVAL_SECONDS:
+	if elapsed_seconds < _schedule_interval_seconds():
 		return
 	elapsed_seconds = 0.0
 	_emit_scheduled_action()
@@ -179,6 +179,43 @@ func _is_enabled() -> bool:
 	return context != null and bool(context.settings.get("offline_presence_enabled", true))
 
 
+func _soul_section(key: String) -> Dictionary:
+	if context == null:
+		return {}
+	var soul_value: Variant = context.character.get("soul_profile", {})
+	if not (soul_value is Dictionary):
+		return {}
+	var section_value: Variant = (soul_value as Dictionary).get(key, {})
+	return section_value if section_value is Dictionary else {}
+
+
+func _schedule_interval_seconds() -> float:
+	var behavior := _soul_section("behavior")
+	if behavior.is_empty():
+		return SCHEDULE_INTERVAL_SECONDS
+	return clampf(float(behavior.get("restSeconds", SCHEDULE_INTERVAL_SECONDS)), 12.0, 30.0)
+
+
+func _soul_ambient_rotation() -> PackedStringArray:
+	var traits := _soul_section("traits")
+	if traits.is_empty():
+		return PackedStringArray(SAFE_ANIMATIONS)
+	var warmth := clampf(float(traits.get("warmth", 0.65)), 0.0, 1.0)
+	var humor := clampf(float(traits.get("humor", 0.45)), 0.0, 1.0)
+	var formality := clampf(float(traits.get("formality", 0.45)), 0.0, 1.0)
+	var initiative := clampf(float(traits.get("initiative", 0.5)), 0.0, 1.0)
+	var energy := clampf(float(traits.get("energy", 0.5)), 0.0, 1.0)
+	if energy >= 0.65 or humor >= 0.65:
+		return PackedStringArray(["happy", "wave", "think", "idle"])
+	if formality >= 0.65 or (energy <= 0.35 and initiative <= 0.45):
+		return PackedStringArray(["think", "idle", "wave", "happy"])
+	if warmth >= 0.65 and initiative >= 0.55:
+		return PackedStringArray(["wave", "happy", "think", "idle"])
+	if initiative <= 0.35:
+		return PackedStringArray(["think", "idle", "happy", "wave"])
+	return PackedStringArray(SAFE_ANIMATIONS)
+
+
 func _available_safe_animations() -> PackedStringArray:
 	var available := PackedStringArray()
 	if context == null:
@@ -186,7 +223,7 @@ func _available_safe_animations() -> PackedStringArray:
 	var advertised: Variant = context.character.get("animations", PackedStringArray())
 	if not advertised is PackedStringArray:
 		return available
-	for animation_name in SAFE_ANIMATIONS:
+	for animation_name in _soul_ambient_rotation():
 		if advertised.has(animation_name):
 			available.append(animation_name)
 	return available
