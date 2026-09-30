@@ -169,6 +169,28 @@ jobs:
             -Arch $env:TARGET_ARCH `
             -RequirePublishable
 
+      - name: Verify unsigned Authenticode boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = Get-ChildItem release/out -Directory -Filter 'ocp-windows-*' | Select-Object -First 1
+          if ($null -eq $bundle) { throw 'Portable bundle directory was not produced.' }
+          $unsignedPaths = @(
+            (Join-Path $bundle.FullName 'ocp-launcher.exe'),
+            (Join-Path $bundle.FullName 'bin/ocp-kernel.exe'),
+            (Join-Path $bundle.FullName 'bin/ocp-native-companion-window.exe'),
+            (Join-Path $bundle.FullName 'bin/ocp-release-check.exe'),
+            (Join-Path $bundle.FullName "bin/windows/$env:TARGET_ARCH/ocp_desktop_runtime_ext.dll"),
+            (Join-Path $bundle.FullName 'desktop-shell/OCP.exe'),
+            (Join-Path $bundle.FullName 'ocp-runtime.exe')
+          )
+          foreach ($path in $unsignedPaths) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Unsigned boundary file is missing: $path" }
+            $signature = Get-AuthenticodeSignature -LiteralPath $path
+            if ($signature.Status -ne 'NotSigned') { throw "Public evidence build must remain unsigned: $path status=$($signature.Status)" }
+            Write-Host "unsignedBoundary=$path status=$($signature.Status)"
+          }
+
       - name: Build and verify unsigned Windows installer
         shell: pwsh
         run: |
