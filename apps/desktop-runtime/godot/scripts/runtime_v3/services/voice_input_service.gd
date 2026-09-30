@@ -18,17 +18,27 @@ var pre_roll: Array[PackedByteArray] = []
 var transcript_parts: Dictionary = {}
 var turn_complete_seen: Dictionary = {}
 var completed_sessions: Dictionary = {}
+var echo_guard_active := false
 
 
 func start() -> void:
 	event_bus.subscribe(&"voice.input_start_requested", Callable(self, "_on_input_start_requested"))
 	event_bus.subscribe(&"voice.input_stop_requested", Callable(self, "_on_input_stop_requested"))
+	event_bus.subscribe(&"tts.started", Callable(self, "_on_tts_started"))
+	event_bus.subscribe(&"tts.finished", Callable(self, "_on_tts_terminal"))
+	event_bus.subscribe(&"tts.failed", Callable(self, "_on_tts_terminal"))
+	event_bus.subscribe(&"tts.interrupted", Callable(self, "_on_tts_terminal"))
 	set_process(false)
 
 
 func stop() -> void:
 	event_bus.unsubscribe(&"voice.input_start_requested", Callable(self, "_on_input_start_requested"))
 	event_bus.unsubscribe(&"voice.input_stop_requested", Callable(self, "_on_input_stop_requested"))
+	event_bus.unsubscribe(&"tts.started", Callable(self, "_on_tts_started"))
+	event_bus.unsubscribe(&"tts.finished", Callable(self, "_on_tts_terminal"))
+	event_bus.unsubscribe(&"tts.failed", Callable(self, "_on_tts_terminal"))
+	event_bus.unsubscribe(&"tts.interrupted", Callable(self, "_on_tts_terminal"))
+	_set_echo_guard(false)
 	_stop_capture("service-stop")
 	_disconnect_bridge()
 
@@ -47,6 +57,8 @@ func bind_bridge(target: Node) -> void:
 	_connect_bridge_signal("asr_interrupted", "_on_asr_interrupted")
 	_connect_bridge_signal("asr_error", "_on_asr_error")
 	_connect_bridge_signal("asr_closed", "_on_asr_closed")
+	if bridge.has_method("voice_vad_set_echo_guard"):
+		bridge.call("voice_vad_set_echo_guard", echo_guard_active)
 
 
 func _connect_bridge_signal(signal_name: StringName, method_name: StringName) -> void:
@@ -74,6 +86,23 @@ func _disconnect_bridge() -> void:
 		if bridge.has_signal(signal_name) and bridge.is_connected(signal_name, callback):
 			bridge.disconnect(signal_name, callback)
 	bridge = null
+
+
+func _on_tts_started(_payload: Dictionary) -> void:
+	_set_echo_guard(true)
+
+
+func _on_tts_terminal(_payload: Dictionary) -> void:
+	_set_echo_guard(false)
+
+
+func _set_echo_guard(enabled: bool) -> void:
+	if echo_guard_active == enabled:
+		return
+	echo_guard_active = enabled
+	if is_instance_valid(bridge) and bridge.has_method("voice_vad_set_echo_guard"):
+		bridge.call("voice_vad_set_echo_guard", enabled)
+	event_bus.publish(&"voice.echo_guard_changed", {"enabled": enabled})
 
 
 func _on_input_start_requested(_payload: Dictionary) -> void:
@@ -225,6 +254,7 @@ func _language_hints() -> Array[String]:
 func _bridge_supports_voice_input() -> bool:
 	return is_instance_valid(bridge) \
 		and bridge.has_method("voice_vad_reset") \
+		and bridge.has_method("voice_vad_set_echo_guard") \
 		and bridge.has_method("voice_vad_process_pcm16") \
 		and bridge.has_method("request_asr_start") \
 		and bridge.has_method("request_asr_audio") \

@@ -93,6 +93,13 @@ impl VoiceActivityDetector {
         self.quiet_run = 0;
     }
 
+    /// Update thresholds/debounce without resetting the current speech state.
+    /// This lets Runtime raise the start threshold while its own TTS is audible
+    /// without losing an already-active user utterance during barge-in.
+    pub fn set_config(&mut self, config: VadConfig) {
+        self.config = config.sanitized();
+    }
+
     #[must_use]
     pub fn process_pcm16(&mut self, samples: &[i16]) -> VadDecision {
         let (rms, peak) = pcm16_energy(samples);
@@ -268,6 +275,52 @@ mod tests {
         let decision = vad.process_pcm16(&frame(0));
         assert_eq!(decision.transition, Some(VadTransition::SpeechEnded));
         assert_eq!(decision.state, VadState::Silence);
+    }
+
+    #[test]
+    fn echo_guard_threshold_rejects_leakage_but_allows_near_field_speech() {
+        let mut vad = VoiceActivityDetector::new(VadConfig {
+            start_threshold: 0.055,
+            continue_threshold: 0.025,
+            start_frames: 4,
+            end_frames: 12,
+        });
+        for _ in 0..8 {
+            let decision = vad.process_pcm16(&frame(1200));
+            assert_eq!(decision.state, VadState::Silence);
+            assert_eq!(decision.transition, None);
+        }
+        for _ in 0..3 {
+            let decision = vad.process_pcm16(&frame(4000));
+            assert_eq!(decision.transition, None);
+        }
+        assert_eq!(
+            vad.process_pcm16(&frame(4000)).transition,
+            Some(VadTransition::SpeechStarted)
+        );
+    }
+
+    #[test]
+    fn config_can_raise_threshold_without_resetting_active_state() {
+        let mut vad = VoiceActivityDetector::new(VadConfig {
+            start_threshold: 0.02,
+            continue_threshold: 0.01,
+            start_frames: 1,
+            end_frames: 3,
+        });
+        assert_eq!(
+            vad.process_pcm16(&frame(3000)).transition,
+            Some(VadTransition::SpeechStarted)
+        );
+        vad.set_config(VadConfig {
+            start_threshold: 0.06,
+            continue_threshold: 0.025,
+            start_frames: 4,
+            end_frames: 3,
+        });
+        assert_eq!(vad.state(), VadState::Speech);
+        let decision = vad.process_pcm16(&frame(2000));
+        assert_eq!(decision.state, VadState::Speech);
     }
 
     #[test]

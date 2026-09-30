@@ -1251,6 +1251,25 @@ impl OcpRuntimeBridge {
         self.voice_vad.reset();
     }
 
+    /// Raise/lower VAD thresholds while OCP's own TTS is audible. This is a
+    /// lightweight acoustic echo guard rather than full echo cancellation: it
+    /// suppresses typical speaker leakage but keeps the microphone open so a
+    /// nearby user can still barge in with stronger speech.
+    #[func]
+    fn voice_vad_set_echo_guard(&mut self, enabled: bool) {
+        let config = if enabled {
+            VadConfig {
+                start_threshold: 0.055,
+                continue_threshold: 0.025,
+                start_frames: 4,
+                end_frames: 12,
+            }
+        } else {
+            VadConfig::default()
+        };
+        self.voice_vad.set_config(config);
+    }
+
     /// Process one PCM16 little-endian mono frame locally. Return codes are
     /// intentionally scalar for cheap Godot calls: -1 invalid, 0 silence,
     /// 1 speech-started, 2 speech-active, 3 speech-ended.

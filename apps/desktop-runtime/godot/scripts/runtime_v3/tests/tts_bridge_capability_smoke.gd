@@ -18,6 +18,7 @@ func _run() -> void:
 		and bridge.has_signal("speech_finished") \
 		and bridge.has_signal("speech_requested") \
 		and bridge.has_method("voice_vad_reset") \
+		and bridge.has_method("voice_vad_set_echo_guard") \
 		and bridge.has_method("voice_vad_process_pcm16") \
 		and bridge.has_method("request_asr_start") \
 		and bridge.has_method("request_asr_audio") \

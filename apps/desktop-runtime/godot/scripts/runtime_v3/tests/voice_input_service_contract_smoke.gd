@@ -19,10 +19,14 @@ class FakeBridge:
 	var starts: Array[Dictionary] = []
 	var audio: Array[Dictionary] = []
 	var ends: Array[String] = []
+	var echo_guard_changes: Array[bool] = []
 	var reset_count := 0
 
 	func voice_vad_reset() -> void:
 		reset_count += 1
+
+	func voice_vad_set_echo_guard(enabled: bool) -> void:
+		echo_guard_changes.append(enabled)
 
 	func voice_vad_process_pcm16(_pcm: PackedByteArray) -> int:
 		if vad_codes.is_empty():
@@ -66,6 +70,8 @@ func _run() -> void:
 	service.configure(context, bus)
 	service.start()
 	service.bind_bridge(bridge)
+	bus.publish(&"tts.started", {"message_id": "msg-echo"})
+	bus.publish(&"tts.finished", {"message_id": "msg-echo"})
 
 	var pcm := PackedByteArray([0, 0, 1, 0, 2, 0, 1, 0])
 	service._handle_pcm16_frame(pcm) # silence -> pre-roll only
@@ -100,8 +106,9 @@ func _run() -> void:
 		and str(prompt.get("source", "")) == "voice-asr" \
 		and str(prompt.get("voice_session_id", "")) == session_id
 	var ready_ok: bool = _topic_payload(&"voice.asr_ready").get("model_id", "") == "gemini-3.5-transcribe-live"
-	var ok: bool = start_ok and audio_ok and end_ok and barge_in_ok and interim_ok and final_ok and prompt_ok and ready_ok
-	print("[VOICE-INPUT] start=", start_ok, " audio=", audio_ok, " end=", end_ok, " barge_in=", barge_in_ok, " interim=", interim_ok, " final=", final_ok, " prompt=", prompt_ok, " ready=", ready_ok, " ok=", ok)
+	var echo_guard_ok := bridge.echo_guard_changes == [false, true, false]
+	var ok: bool = start_ok and audio_ok and end_ok and barge_in_ok and interim_ok and final_ok and prompt_ok and ready_ok and echo_guard_ok
+	print("[VOICE-INPUT] start=", start_ok, " audio=", audio_ok, " end=", end_ok, " barge_in=", barge_in_ok, " interim=", interim_ok, " final=", final_ok, " prompt=", prompt_ok, " ready=", ready_ok, " echo_guard=", echo_guard_ok, " ok=", ok)
 	service.stop()
 	holder.free()
 	quit(0 if ok else 1)
