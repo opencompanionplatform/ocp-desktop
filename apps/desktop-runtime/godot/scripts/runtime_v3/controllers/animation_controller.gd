@@ -10,6 +10,7 @@ var presentation_animation: StringName = &""
 var presentation_source := ""
 var presentation_interruptible := true
 var presentation_priority := 0
+var animation_measurement_sequence := 0
 
 func bind_sprite(target: AnimatedSprite2D) -> void:
 	sprite = target
@@ -33,6 +34,7 @@ func stop() -> void:
 	presentation_source = ""
 	presentation_interruptible = true
 	presentation_priority = 0
+	animation_measurement_sequence += 1
 
 func _on_ai_thinking_started(_payload: Dictionary = {}) -> void:
 	ai_thinking = true
@@ -100,6 +102,7 @@ func _on_animation_requested(payload: Dictionary) -> void:
 	_play_animation(name, source)
 
 func _play_animation(name: StringName, source: String = "event") -> void:
+	var request_started_us := Time.get_ticks_usec()
 	if not is_instance_valid(sprite):
 		event_bus.publish(&"animation.missing", {"name": name, "source": source})
 		return
@@ -115,6 +118,9 @@ func _play_animation(name: StringName, source: String = "event") -> void:
 		event_bus.publish(&"animation.missing", {"name": name, "source": source})
 		return
 	sprite.play(name)
+	animation_measurement_sequence += 1
+	var measurement_sequence := animation_measurement_sequence
+	call_deferred("_measure_first_frame", name, source, request_started_us, measurement_sequence)
 	if character_service != null and character_service.has_method("trim_animation_cache"):
 		character_service.call("trim_animation_cache", sprite.sprite_frames, name)
 	_apply_visual_profile(name)
@@ -127,6 +133,21 @@ func _play_animation(name: StringName, source: String = "event") -> void:
 		]
 	)
 	event_bus.publish(&"animation.started", {"name": name, "source": source})
+
+func _measure_first_frame(name: StringName, source: String, request_started_us: int, sequence: int) -> void:
+	await get_tree().process_frame
+	if sequence != animation_measurement_sequence:
+		return
+	if not is_instance_valid(sprite) or sprite.animation != name:
+		return
+	var first_frame_ms := float(Time.get_ticks_usec() - request_started_us) / 1000.0
+	event_bus.publish(&"animation.first_frame_measured", {
+		"name": name,
+		"source": source,
+		"firstFrameMs": first_frame_ms,
+		"frame": sprite.frame,
+	})
+
 
 func _apply_visual_profile(name: StringName) -> void:
 	if not is_instance_valid(sprite):

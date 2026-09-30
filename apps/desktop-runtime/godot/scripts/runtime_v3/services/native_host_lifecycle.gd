@@ -308,6 +308,27 @@ func _process_native_event() -> void:
 		native_dragging = true
 		event_bus.publish(&"character.drag_started", {"source": "native-host"})
 		print("[NativeHostLifecycle] drag-begin source=native-host physics_committed=false")
+	elif status == "drag-probe":
+		# Native host events are published through a latest-value handoff file.
+		# A fast first WM_MOUSEMOVE can replace `drag-begin` before Runtime's next
+		# process tick. Treat the first observed probe as an implicit begin so Drag
+		# Hold/predictive preload cannot be skipped merely because that edge event
+		# was coalesced by the transport.
+		if not native_dragging:
+			native_dragging = true
+			event_bus.publish(&"character.drag_started", {
+				"source": "native-host",
+				"recoveredFromProbe": true,
+			})
+			print("[NativeHostLifecycle] drag-begin recovered=drag-probe physics_committed=false")
+		var probe_feet := Vector2(
+			float(parsed.get("desktop_feet_x", 0.0)),
+			float(parsed.get("desktop_feet_y", 0.0))
+		)
+		event_bus.publish(&"character.drag_probe", {
+			"source": "native-host",
+			"desktopFeet": probe_feet,
+		})
 	elif status == "startup-repositioned":
 		event_bus.publish(&"character.native_surface_ready", {
 			"source": "native-startup-repositioned",
@@ -315,8 +336,11 @@ func _process_native_event() -> void:
 		print("[NativeHostLifecycle] startup-character-revealed after=native-placement-ack")
 	elif status == "drag-end":
 		native_dragging = false
-		event_bus.publish(&"character.drag_finished", {"source": "native-host"})
 		var feet := Vector2(float(parsed.get("desktop_feet_x", 0.0)), float(parsed.get("desktop_feet_y", 0.0)))
+		event_bus.publish(&"character.drag_finished", {
+			"source": "native-host",
+			"desktopFeet": feet,
+		})
 		var committed := false
 		if is_instance_valid(bridge) and bridge.has_method("commit_companion_position"):
 			committed = bool(bridge.call("commit_companion_position", COMPANION_ID, feet.x, feet.y))

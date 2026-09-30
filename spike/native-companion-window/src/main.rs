@@ -253,6 +253,7 @@ mod windows_spike {
     static SVG_ICON_CACHE: OnceLock<Mutex<SvgIconCache>> = OnceLock::new();
     static BUBBLE_UNTIL: OnceLock<Mutex<Option<std::time::Instant>>> = OnceLock::new();
     static HOVER_LEAVE_AT: OnceLock<Mutex<Option<std::time::Instant>>> = OnceLock::new();
+    static DRAG_PROBE_AT: OnceLock<Mutex<Option<std::time::Instant>>> = OnceLock::new();
     static RUNTIME_HITBOX: OnceLock<Mutex<Option<NormalizedHitbox>>> = OnceLock::new();
 
     fn theme_name(index: usize) -> &'static str {
@@ -652,6 +653,7 @@ mod windows_spike {
             }
             WM_ENTERSIZEMOVE => {
                 DRAG_ACTIVE.store(true, Ordering::Relaxed);
+                reset_drag_probe_throttle();
                 suppress_hover_for_drag(hwnd);
                 log_drag_event(hwnd, "drag-begin");
                 0
@@ -659,6 +661,7 @@ mod windows_spike {
             WM_EXITSIZEMOVE => {
                 log_drag_event(hwnd, "drag-end");
                 DRAG_ACTIVE.store(false, Ordering::Relaxed);
+                reset_drag_probe_throttle();
                 reposition_auxiliary_windows(hwnd);
                 0
             }
@@ -673,6 +676,7 @@ mod windows_spike {
                     DRAG_OFFSET_X.store(cursor.x - rect.left, Ordering::Relaxed);
                     DRAG_OFFSET_Y.store(cursor.y - rect.top, Ordering::Relaxed);
                     DRAG_ACTIVE.store(true, Ordering::Relaxed);
+                    reset_drag_probe_throttle();
                     SetCapture(hwnd);
                     suppress_hover_for_drag(owner);
                     log_drag_event(owner, "drag-begin");
@@ -693,6 +697,7 @@ mod windows_spike {
                         rect.bottom - rect.top,
                         SWP_NOACTIVATE,
                     );
+                    maybe_log_drag_probe(owner);
                     reposition_auxiliary_windows(owner);
                 }
                 0
@@ -3730,6 +3735,28 @@ mod windows_spike {
         monitors
     }
 
+    fn reset_drag_probe_throttle() {
+        if let Ok(mut value) = DRAG_PROBE_AT.get_or_init(|| Mutex::new(None)).lock() {
+            *value = None;
+        }
+    }
+
+    unsafe fn maybe_log_drag_probe(hwnd: Hwnd) {
+        let now = std::time::Instant::now();
+        let mut should_emit = false;
+        if let Ok(mut last) = DRAG_PROBE_AT.get_or_init(|| Mutex::new(None)).lock() {
+            should_emit = last.as_ref().map_or(true, |previous| {
+                now.duration_since(*previous) >= std::time::Duration::from_millis(50)
+            });
+            if should_emit {
+                *last = Some(now);
+            }
+        }
+        if should_emit {
+            log_drag_event(hwnd, "drag-probe");
+        }
+    }
+
     unsafe fn log_drag_event(hwnd: Hwnd, phase: &str) {
         let mut rect: Rect = std::mem::zeroed();
         if GetWindowRect(hwnd, &mut rect) == 0 {
@@ -3750,16 +3777,18 @@ mod windows_spike {
             return;
         };
         write_native_event(hwnd, phase, Some(feet));
-        println!(
-            "[native-spike] phase={phase} accepted=true source=native-drag-capture desktop_feet=({:.2},{:.2}) monitor={:#x} physical_rect=({},{},{},{}) physics_authority=runtime",
-            feet.x,
-            feet.y,
-            monitor_id,
-            rect.left,
-            rect.top,
-            rect.right,
-            rect.bottom,
-        );
+        if phase != "drag-probe" {
+            println!(
+                "[native-spike] phase={phase} accepted=true source=native-drag-capture desktop_feet=({:.2},{:.2}) monitor={:#x} physical_rect=({},{},{},{}) physics_authority=runtime",
+                feet.x,
+                feet.y,
+                monitor_id,
+                rect.left,
+                rect.top,
+                rect.right,
+                rect.bottom,
+            );
+        }
     }
 
     unsafe fn poll_native_interaction(hwnd: Hwnd) {
@@ -3850,6 +3879,7 @@ mod windows_spike {
             return;
         }
         log_drag_event(hwnd, "drag-end");
+        reset_drag_probe_throttle();
         ReleaseCapture();
         reposition_auxiliary_windows(hwnd);
         println!("[native-spike] phase=drag-finished source={source} capture_released=true");

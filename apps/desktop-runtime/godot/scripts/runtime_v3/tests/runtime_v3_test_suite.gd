@@ -168,6 +168,10 @@ func _run_all() -> void:
 		passed += 1
 	total += 1
 
+	if _test_drag_edge_predictive_prefetch():
+		passed += 1
+	total += 1
+
 	if _test_native_mouse_capture_contract():
 		passed += 1
 	total += 1
@@ -704,6 +708,8 @@ func _test_baseline_presentation_regression() -> bool:
 		and not startup_visibility_source.contains("_window != get_tree().root")
 	)
 	_report("baseline presentation regression", ok)
+	hover.free()
+	character.free()
 	startup_controller.free()
 	detached_main_window.free()
 	viewport.queue_free()
@@ -1083,6 +1089,9 @@ func _test_native_presentation_coordinator_contract() -> bool:
 	var ok: bool = disabled_rejected and default_overlay and requested and ready and resized \
 		and attached and detached and invalid_fallback
 	_report("native presentation coordinator contract", ok)
+	coordinator.free()
+	bus.free()
+	context.free()
 	return ok
 
 
@@ -1181,6 +1190,7 @@ func _test_animation_facing_authority() -> bool:
 		and climb_keeps_directional_facing
 	_report("animation facing authority", ok)
 	sprite.free()
+	controller.free()
 	return ok
 
 
@@ -1443,6 +1453,8 @@ func _test_overlay_mode_state_authority() -> bool:
 
 	var ok: bool = overlay_ok and debug_ok
 	_report("overlay mode state authority", ok)
+	controller.free()
+	context.free()
 	return ok
 
 
@@ -1494,6 +1506,7 @@ func _test_overlay_canvas_authority() -> bool:
 		and visible_in_overlay \
 		and host_position.x > 1280.0
 	_report("overlay canvas authority", ok)
+	window_controller.free()
 	return ok
 
 
@@ -1546,6 +1559,7 @@ func _test_drag_commit_visual_hold() -> bool:
 	var ok: bool = host.position == Vector2(500.0, 300.0)
 	_report("drag commit visual hold", ok)
 	host.free()
+	controller.free()
 	return ok
 
 
@@ -1613,6 +1627,9 @@ func _test_drag_release_capture_contract() -> bool:
 	var click_source := FileAccess.get_file_as_string(
 		"res://scripts/runtime_v3/controllers/click_through_controller.gd"
 	)
+	var native_lifecycle_source := FileAccess.get_file_as_string(
+		"res://scripts/runtime_v3/services/native_host_lifecycle.gd"
+	)
 	var ok: bool = (
 		character_source.contains("_finish_drag_commit")
 		and character_source.contains("poll-release-fallback")
@@ -1623,6 +1640,10 @@ func _test_drag_release_capture_contract() -> bool:
 		)
 		and click_source.contains("drag_capture_active")
 		and click_source.contains("_on_drag_capture_started")
+		and native_lifecycle_source.contains('elif status == "drag-probe":')
+		and native_lifecycle_source.contains('"recoveredFromProbe": true')
+		and character_source.contains('"motion:fall-to-land"')
+		and character_source.contains('"motion:climb-to-hang"')
 	)
 	_report("drag release capture contract", ok)
 	return ok
@@ -1657,21 +1678,64 @@ func _test_native_drag_animation_bridge() -> bool:
 
 	controller.physics_last_movement_state = "airborne-falling"
 	controller.physics_last_velocity = Vector2(0.0, 120.0)
-	controller._on_character_drag_finished({"source": "native-host"})
+	controller._on_character_drag_finished({
+		"source": "native-host",
+		"desktopFeet": Vector2(640.0, 480.0),
+	})
 	var release_ok: bool = not controller.native_drag_visual_active \
 		and controller.physics_last_animation == &"drag_release" \
 		and controller.drag_release_visual_deadline_ms > Time.get_ticks_msec() \
+		and controller.drag_release_requested_feet == Vector2(640.0, 480.0) \
+		and controller._native_anchor_is_locked() \
+		and controller._native_hitbox_is_locked() \
 		and requested == [&"drag_hold", &"drag_release"]
 	var before_release_physics := requested.size()
 	controller._apply_physics_animation("airborne-falling", Vector2(0.0, 120.0))
 	var release_locked := requested.size() == before_release_physics
 	controller._on_animation_finished({"name": &"drag_release"})
 	var resumed_fall := requested == [&"drag_hold", &"drag_release", &"fall"]
+	var release_unlocked := not controller._native_anchor_is_locked() \
+		and not controller._native_hitbox_is_locked()
 
-	var ok: bool = hold_ok and hold_locked and release_ok and release_locked and resumed_fall
+	var ok: bool = hold_ok and hold_locked and release_ok and release_locked \
+		and resumed_fall and release_unlocked
 	_report("native drag animation bridge", ok)
 	bus.free()
 	sprite.free()
+	controller.free()
+	return ok
+
+
+func _test_drag_edge_predictive_prefetch() -> bool:
+	var controller = CharacterControllerScript.new()
+	var context = ContextScript.new()
+	# Production MultiMonitorController stores Rect2i values from DisplayServer.
+	context.update_monitor({"rects": [Rect2i(0, 0, 1920, 1080)]})
+	var sprite := AnimatedSprite2D.new()
+	var frames := SpriteFrames.new()
+	for animation_name in [&"idle", &"climb_ready_left", &"climb_ready_right"]:
+		frames.add_animation(animation_name)
+	frames.set_animation_loop(&"idle", true)
+	sprite.sprite_frames = frames
+	sprite.animation = &"idle"
+	controller.context = context
+	controller.sprite = sprite
+
+	var left := controller._predict_drag_edge_animation(Vector2(100.0, 500.0))
+	var right := controller._predict_drag_edge_animation(Vector2(1820.0, 500.0))
+	var middle := controller._predict_drag_edge_animation(Vector2(960.0, 500.0))
+	var outside := controller._predict_drag_edge_animation(Vector2(100.0, 1200.0))
+	var ok := str(left.get("edge", "")) == "left" \
+		and str(left.get("facing", "")) == "right" \
+		and StringName(left.get("animation", &"")) == &"climb_ready_right" \
+		and str(right.get("edge", "")) == "right" \
+		and str(right.get("facing", "")) == "left" \
+		and StringName(right.get("animation", &"")) == &"climb_ready_left" \
+		and middle.is_empty() \
+		and outside.is_empty()
+	_report("drag edge predictive prefetch", ok)
+	sprite.free()
+	context.free()
 	controller.free()
 	return ok
 

@@ -18,6 +18,7 @@ var presentation_canonical_seen: bool = false
 const DRAG_COMMIT_HOLD_TIMEOUT_MS: int = 2000
 const IDLE_RENDER_MAX_FPS: int = 30
 const ACTIVE_RENDER_MAX_FPS: int = 60
+const DRAG_EDGE_PREFETCH_DISTANCE: float = 176.0
 
 var presentation_drag_commit_pending: bool = false
 var presentation_drag_commit_started_ms: int = 0
@@ -29,6 +30,13 @@ var drag_mouse_origin: Vector2 = Vector2.ZERO
 var drag_host_origin: Vector2 = Vector2.ZERO
 var drag_finish_in_progress: bool = false
 var drag_release_visual_deadline_ms: int = 0
+var drag_release_started_us: int = 0
+var drag_release_resolution_pending: bool = false
+var drag_release_requested_feet: Vector2 = Vector2.ZERO
+var predicted_drag_edge_animation: StringName = &""
+var predicted_drag_edge: String = ""
+var predicted_drag_edge_distance_px: float = INF
+var pending_animation_prefetches: Dictionary = {}
 var native_drag_visual_active: bool = false
 var native_mouse_capture_active: bool = false
 var physics_target_position: Vector2 = Vector2.ZERO
@@ -104,6 +112,7 @@ func start() -> void:
 	event_bus.subscribe(&"character.teleport_visual_cancelled", Callable(self, "_on_teleport_visual_cancelled"))
 	event_bus.subscribe(&"character.presentation_scale_requested", Callable(self, "_on_presentation_scale_requested"))
 	event_bus.subscribe(&"character.drag_started", Callable(self, "_on_character_drag_started"))
+	event_bus.subscribe(&"character.drag_probe", Callable(self, "_on_character_drag_probe"))
 	event_bus.subscribe(&"character.drag_finished", Callable(self, "_on_character_drag_finished"))
 	event_bus.subscribe(&"window.presentation_mode_applied", Callable(self, "_on_presentation_mode_applied"))
 	event_bus.subscribe(&"window.hidden_to_tray", Callable(self, "_on_save_requested"))
@@ -126,6 +135,7 @@ func stop() -> void:
 	event_bus.unsubscribe(&"character.teleport_visual_cancelled", Callable(self, "_on_teleport_visual_cancelled"))
 	event_bus.unsubscribe(&"character.presentation_scale_requested", Callable(self, "_on_presentation_scale_requested"))
 	event_bus.unsubscribe(&"character.drag_started", Callable(self, "_on_character_drag_started"))
+	event_bus.unsubscribe(&"character.drag_probe", Callable(self, "_on_character_drag_probe"))
 	event_bus.unsubscribe(&"character.drag_finished", Callable(self, "_on_character_drag_finished"))
 	event_bus.unsubscribe(&"window.presentation_mode_applied", Callable(self, "_on_presentation_mode_applied"))
 	event_bus.unsubscribe(&"window.hidden_to_tray", Callable(self, "_on_save_requested"))
@@ -296,6 +306,7 @@ func _finish_drag_commit(release_source: StringName) -> void:
 		"[drag-sync] finish source=%s desktop_feet=%s committed=%s capture_released=%s"
 		% [release_source, desktop_feet, committed, capture_released]
 	)
+	drag_release_requested_feet = desktop_feet
 	event_bus.publish(&"character.drag_finished", {
 		"position": host.position,
 		"desktopFeet": desktop_feet,
@@ -315,14 +326,98 @@ func _on_character_drag_started(payload: Dictionary) -> void:
 	_play_drag_hold_visual()
 
 
+func _on_character_drag_probe(payload: Dictionary) -> void:
+	if str(payload.get("source", "")) != "native-host" or not native_drag_visual_active:
+		return
+	var desktop_feet: Vector2 = payload.get("desktopFeet", Vector2.ZERO)
+	var prediction := _predict_drag_edge_animation(desktop_feet)
+	if prediction.is_empty():
+		predicted_drag_edge_animation = &""
+		predicted_drag_edge = ""
+		predicted_drag_edge_distance_px = INF
+		return
+	var animation_name: StringName = prediction.get("animation", &"")
+	if animation_name == &"":
+		return
+	predicted_drag_edge_animation = animation_name
+	predicted_drag_edge = str(prediction.get("edge", ""))
+	predicted_drag_edge_distance_px = float(prediction.get("distancePx", 0.0))
+	var drag_release_animation := _animation_for_role("drag.release", &"drag_release")
+	if not _character_has_animation(drag_release_animation):
+		# Characters without an authored Drag Release have a free second hot-cache
+		# slot while Fall is warmed on drag start. Decode the predicted edge pose
+		# now so releasing onto the wall never pays a 100+ ms first-frame decode.
+		_schedule_animation_prefetch(
+			animation_name,
+			"drag-edge-probe:%s" % (predicted_drag_edge if not predicted_drag_edge.is_empty() else "unknown")
+		)
+	# Characters with Drag Hold/Release keep only the prediction until release;
+	# their two-entry cache is already occupied by those transition clips.
+	event_bus.publish(&"character.drag_edge_predicted", {
+		"desktopFeet": desktop_feet,
+		"animation": animation_name,
+		"edge": predicted_drag_edge,
+		"facing": str(prediction.get("facing", "unchanged")),
+		"distancePx": predicted_drag_edge_distance_px,
+	})
+
+
+func _predict_drag_edge_animation(desktop_feet: Vector2) -> Dictionary:
+	if not is_instance_valid(context) or not is_instance_valid(sprite) \
+	or sprite.sprite_frames == null or desktop_feet == Vector2.ZERO:
+		return {}
+	var rects: Array = context.monitor.get("rects", [])
+	var best_distance := INF
+	var best_edge := ""
+	var best_facing := "unchanged"
+	for rect_value in rects:
+		if not rect_value is Rect2 and not rect_value is Rect2i:
+			continue
+		var rect := Rect2(rect_value)
+		if desktop_feet.y < rect.position.y or desktop_feet.y > rect.end.y:
+			continue
+		var left_distance := absf(desktop_feet.x - rect.position.x)
+		if left_distance <= DRAG_EDGE_PREFETCH_DISTANCE and left_distance < best_distance:
+			best_distance = left_distance
+			best_edge = "left"
+			best_facing = "right"
+		var right_distance := absf(desktop_feet.x - rect.end.x)
+		if right_distance <= DRAG_EDGE_PREFETCH_DISTANCE and right_distance < best_distance:
+			best_distance = right_distance
+			best_edge = "right"
+			best_facing = "left"
+	if best_edge.is_empty():
+		return {}
+	var previous_flip := sprite.flip_h if is_instance_valid(sprite) else false
+	var animation_name := _resolve_movement_animation("climb-ready", Vector2.ZERO, best_facing)
+	if is_instance_valid(sprite):
+		sprite.flip_h = previous_flip
+	if animation_name == &"":
+		return {}
+	return {
+		"animation": animation_name,
+		"edge": best_edge,
+		"facing": best_facing,
+		"distancePx": best_distance,
+	}
+
+
 func _on_character_drag_finished(payload: Dictionary) -> void:
 	if str(payload.get("source", "")) != "native-host":
 		return
 	native_drag_visual_active = false
+	drag_release_requested_feet = payload.get("desktopFeet", Vector2.ZERO)
 	_play_drag_release_visual()
 
 
 func _play_drag_hold_visual() -> void:
+	drag_release_resolution_pending = false
+	drag_release_started_us = 0
+	drag_release_requested_feet = Vector2.ZERO
+	predicted_drag_edge_animation = &""
+	predicted_drag_edge = ""
+	predicted_drag_edge_distance_px = INF
+	_schedule_drag_release_prefetch()
 	var drag_hold_animation := _animation_for_role("drag.hold", &"drag_hold")
 	if not _character_has_animation(drag_hold_animation):
 		return
@@ -335,6 +430,8 @@ func _play_drag_hold_visual() -> void:
 
 
 func _play_drag_release_visual() -> void:
+	drag_release_started_us = Time.get_ticks_usec()
+	drag_release_resolution_pending = true
 	var drag_hold_animation := _animation_for_role("drag.hold", &"drag_hold")
 	var drag_release_animation := _animation_for_role("drag.release", &"drag_release")
 	if _character_has_animation(drag_release_animation):
@@ -347,10 +444,12 @@ func _play_drag_release_visual() -> void:
 			"name": drag_release_animation,
 			"source": "drag-interaction",
 		})
+		_schedule_predicted_drag_edge_prefetch()
 		return
 	if physics_last_animation == drag_hold_animation:
 		physics_last_animation = &""
 	drag_release_visual_deadline_ms = 0
+	_schedule_predicted_drag_edge_prefetch()
 	_apply_physics_animation(
 		physics_last_movement_state,
 		physics_last_velocity,
@@ -358,7 +457,73 @@ func _play_drag_release_visual() -> void:
 	)
 
 
+func _schedule_predicted_drag_edge_prefetch() -> void:
+	if predicted_drag_edge_animation == &"":
+		return
+	_schedule_animation_prefetch(
+		predicted_drag_edge_animation,
+		"drag-edge-release:%s" % (predicted_drag_edge if not predicted_drag_edge.is_empty() else "unknown")
+	)
+
+
+func _schedule_drag_release_prefetch() -> void:
+	var release_animation := _animation_for_role("drag.release", &"drag_release")
+	if _character_has_animation(release_animation):
+		_schedule_animation_prefetch(release_animation, "drag-start:release")
+	elif _character_has_animation(&"fall"):
+		_schedule_animation_prefetch(&"fall", "drag-start:fallback-fall")
+
+
+func _schedule_canonical_animation_prefetch(
+	movement_state: String,
+	velocity: Vector2,
+	facing: String
+) -> void:
+	if not is_instance_valid(sprite) or sprite.sprite_frames == null:
+		return
+	var previous_flip := sprite.flip_h
+	var candidate := _resolve_movement_animation(movement_state, velocity, facing)
+	sprite.flip_h = previous_flip
+	if candidate in [&"", &"idle", &"idle_neutral"]:
+		return
+	_schedule_animation_prefetch(candidate, "drag-release:%s" % movement_state)
+
+
+func _schedule_animation_prefetch(animation_name: StringName, reason: String) -> void:
+	if animation_name == &"" or not is_instance_valid(sprite) or sprite.sprite_frames == null:
+		return
+	if sprite.sprite_frames.has_animation(animation_name):
+		return
+	var key := str(animation_name)
+	if bool(pending_animation_prefetches.get(key, false)):
+		return
+	pending_animation_prefetches[key] = true
+	var target_frames := sprite.sprite_frames
+	call_deferred("_run_animation_prefetch", animation_name, reason, target_frames)
+
+
+func _run_animation_prefetch(
+	animation_name: StringName,
+	reason: String,
+	target_frames: SpriteFrames
+) -> void:
+	pending_animation_prefetches.erase(str(animation_name))
+	if not is_instance_valid(sprite) or sprite.sprite_frames != target_frames:
+		return
+	var character_service: Variant = services.get("character_service") if is_instance_valid(services) else null
+	if character_service == null or not character_service.has_method("prefetch_animation"):
+		return
+	character_service.call(
+		"prefetch_animation",
+		animation_name,
+		target_frames,
+		sprite.animation,
+		reason
+	)
+
+
 func _on_character_loaded(payload: Dictionary) -> void:
+	pending_animation_prefetches.clear()
 	var frames: SpriteFrames = payload.get("frames")
 	_render_log("character-loaded-received", {
 		"payload_keys": payload.keys(),
@@ -711,18 +876,24 @@ func _native_canvas_size() -> Vector2:
 	return _native_render_size()
 
 
+func _drag_release_visual_active() -> bool:
+	var release_animation := _animation_for_role("drag.release", &"drag_release")
+	return physics_last_animation == release_animation \
+		and drag_release_visual_deadline_ms > Time.get_ticks_msec()
+
+
 func _native_hitbox_is_locked() -> bool:
-	return physics_last_movement_state in ["climb-ready", "climbing", "hanging"]
+	return physics_last_movement_state in ["climb-ready", "climbing", "hanging"] \
+		or _drag_release_visual_active()
 
 
 func _native_anchor_is_locked() -> bool:
-	# `climb_top` is a visual transition emitted immediately after Hanging.
-	# Keep the native contact fixed until that animation finishes and the Kernel
-	# publishes the new grounded state. This prevents the host HWND from jumping
-	# toward the taskbar as the sprite's transparent bounds change.
-	# Climb/hang animations themselves must publish their authored surfaceAnchor;
-	# locking those states to the prior feet anchor moved the HWND above the screen.
-	return physics_last_animation == &"climb_top"
+	# `climb_top` and Drag Release are visual-only transitions. Keep the native
+	# contact fixed until Physics selects the next canonical state; otherwise
+	# animation-specific transparent bounds can move the HWND even though the
+	# canonical desktop feet have not moved.
+	# Climb/hang locomotion itself still publishes authored surfaceAnchor values.
+	return physics_last_animation == &"climb_top" or _drag_release_visual_active()
 
 
 func _texture_alpha_rect(texture: Texture2D) -> Rect2i:
@@ -862,8 +1033,17 @@ func _publish_native_surface_anchor(frames: SpriteFrames) -> void:
 		clampf(local_anchor.x / host_size.x, 0.0, 1.0),
 		clampf(local_anchor.y / host_size.y, 0.0, 1.0)
 	)
+	var candidate_normalized := normalized
 	if _native_anchor_is_locked() and last_stable_native_anchor.x >= 0.0:
 		normalized = last_stable_native_anchor
+		var prevented_delta := (candidate_normalized - normalized) * host_size
+		event_bus.publish(&"character.anchor_continuity_measured", {
+			"animation": str(animation),
+			"reason": "drag-release" if _drag_release_visual_active() else "climb-top",
+			"preventedDeltaPx": prevented_delta.length(),
+			"candidateAnchor": candidate_normalized,
+			"lockedAnchor": normalized,
+		})
 	else:
 		last_stable_native_anchor = normalized
 	event_bus.publish(&"character.native_anchor_changed", {
@@ -993,6 +1173,24 @@ func _apply_presentation_state(state: Dictionary, source: String) -> void:
 	var movement_state: String = str(state.get("movementState", "stationary"))
 	var update_kind: String = str(state.get("updateKind", "continuous"))
 	var feet_desktop: Vector2 = state.get("desktopFeet", Vector2.ZERO)
+	if drag_release_resolution_pending and update_kind == "drag-commit":
+		var release_latency_ms := 0.0
+		if drag_release_started_us > 0:
+			release_latency_ms = float(Time.get_ticks_usec() - drag_release_started_us) / 1000.0
+		var snap_distance_px := 0.0
+		if drag_release_requested_feet != Vector2.ZERO:
+			snap_distance_px = drag_release_requested_feet.distance_to(feet_desktop)
+		event_bus.publish(&"character.drag_release_resolved", {
+			"latencyMs": release_latency_ms,
+			"requestedFeet": drag_release_requested_feet,
+			"resolvedFeet": feet_desktop,
+			"snapDistancePx": snap_distance_px,
+			"movementState": movement_state,
+			"attachmentState": str(state.get("attachmentState", "")),
+			"surfaceKind": str(state.get("surfaceKind", "")),
+			"sequence": sequence,
+		})
+		drag_release_resolution_pending = false
 	if update_kind != "continuous" or movement_state != physics_last_logged_state:
 		print(
 			"[PhysicsAnimation] canonical movement_state=%s update=%s sequence=%d" % [
@@ -1092,6 +1290,12 @@ func _apply_presentation_state(state: Dictionary, source: String) -> void:
 		physics_target_active = not dragging
 
 	var facing: String = str(state.get("facing", "unchanged"))
+	if drag_release_visual_deadline_ms > Time.get_ticks_msec():
+		_schedule_canonical_animation_prefetch(
+			movement_state,
+			state.get("velocity", Vector2.ZERO),
+			facing
+		)
 	_apply_physics_animation(
 		movement_state,
 		state.get("velocity", Vector2.ZERO),
@@ -1183,6 +1387,15 @@ func _apply_physics_animation(
 	physics_last_movement_state = movement_state
 	physics_last_velocity = velocity
 	physics_last_facing = facing
+	# Warm the deterministic next transition while the current motion still has
+	# useful dwell time. With the two-entry bounded cache this keeps only the
+	# active clip plus its most likely successor: Fall -> Land and Climb -> Hang.
+	if movement_state == "airborne-falling" and _character_has_animation(&"land"):
+		_schedule_animation_prefetch(&"land", "motion:fall-to-land")
+	elif movement_state == "climbing":
+		var hang_animation := _animation_for_role("hang.neutral", &"hang")
+		if _character_has_animation(hang_animation):
+			_schedule_animation_prefetch(hang_animation, "motion:climb-to-hang")
 	var transient: StringName = &""
 	if previous_state == "airborne-falling" \
 	and movement_state != "airborne-rising" \

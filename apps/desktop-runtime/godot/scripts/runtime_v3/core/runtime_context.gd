@@ -60,6 +60,7 @@ var settings: Dictionary = {
 var runtime_config: Dictionary = {
 	"debug_enabled": false,
 	"performance_overlay_enabled": false,
+	"performance_baseline": {},
 	"mixed_dpi_mode": "adaptive_single_window",
 	"per_monitor_windows_enabled": false,
 	"hybrid_monitor_probe_active": false,

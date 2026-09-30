@@ -1099,20 +1099,23 @@ func ensure_animation_loaded(animation_name: StringName, target_frames: SpriteFr
 		return false
 	if target_frames.has_animation(animation_name):
 		_touch_lazy_animation(animation_name)
+		_publish_animation_load_measurement(animation_name, target_frames, 0.0, true, true, "resident")
 		return true
 	if lazy_package_root.is_empty() or lazy_entry.is_empty():
+		_publish_animation_load_measurement(animation_name, target_frames, 0.0, false, false, "unavailable")
 		return false
 
 	var source_name := StringName(_resolve_animation_source(lazy_entry, str(animation_name)))
 	if source_name != &"" and source_name != animation_name and target_frames.has_animation(source_name):
 		_copy_animation(target_frames, source_name, animation_name)
 		_touch_lazy_animation(animation_name)
+		_publish_animation_load_measurement(animation_name, target_frames, 0.0, true, true, "shared-source")
 		return true
 
 	# The active managed package was fully verified before lazy state was armed.
 	# Re-hash only the sprite sheet requested by this animation against the
 	# signed manifest instead of rescanning the entire 60+ file projection.
-	var lazy_started_ms := Time.get_ticks_msec()
+	var lazy_started_us := Time.get_ticks_usec()
 	var loaded := _build_sprite_frames_after_verification(
 		lazy_package_root,
 		lazy_entry,
@@ -1120,9 +1123,10 @@ func ensure_animation_loaded(animation_name: StringName, target_frames: SpriteFr
 		lazy_managed,
 		lazy_asset_hashes
 	)
-	var lazy_ms := Time.get_ticks_msec() - lazy_started_ms
+	var lazy_ms := float(Time.get_ticks_usec() - lazy_started_us) / 1000.0
 	if loaded == null or not loaded.has_animation(animation_name):
-		print("[CharacterLazyLoad] animation=%s ok=false ms=%d" % [animation_name, lazy_ms])
+		print("[CharacterLazyLoad] animation=%s ok=false ms=%.2f" % [animation_name, lazy_ms])
+		_publish_animation_load_measurement(animation_name, target_frames, lazy_ms, false, false, "lazy-load")
 		return false
 	var requested_sprite_id := _animation_sprite_id(animation_name)
 	var shared_loaded := 0
@@ -1132,14 +1136,67 @@ func ensure_animation_loaded(animation_name: StringName, target_frames: SpriteFr
 		_copy_animation_between(loaded, target_frames, loaded_name)
 		_touch_lazy_animation(loaded_name)
 		shared_loaded += 1
-	print("[CharacterLazyLoad] animation=%s sprite=%s frames=%d shared=%d ms=%d" % [
+	print("[CharacterLazyLoad] animation=%s sprite=%s frames=%d shared=%d ms=%.2f" % [
 		animation_name,
 		requested_sprite_id,
 		loaded.get_frame_count(animation_name),
 		shared_loaded,
 		lazy_ms,
 	])
+	_publish_animation_load_measurement(animation_name, target_frames, lazy_ms, false, true, "lazy-load")
 	return true
+
+
+func _publish_animation_load_measurement(
+	animation_name: StringName,
+	target_frames: SpriteFrames,
+	load_ms: float,
+	cache_hit: bool,
+	ok: bool,
+	source: String
+) -> void:
+	if event_bus == null:
+		return
+	event_bus.publish(&"character.animation_load_measured", {
+		"name": animation_name,
+		"loadMs": load_ms,
+		"cacheHit": cache_hit,
+		"ok": ok,
+		"source": source,
+		"cacheEntries": lazy_animation_order.size(),
+		"loadedAnimations": target_frames.get_animation_names().size() if target_frames != null else 0,
+	})
+
+
+func prefetch_animation(
+	animation_name: StringName,
+	target_frames: SpriteFrames,
+	active_animation: StringName = &"",
+	reason: String = "predictive"
+) -> bool:
+	if target_frames == null or animation_name == &"":
+		return false
+	var started_us := Time.get_ticks_usec()
+	var already_resident := target_frames.has_animation(animation_name)
+	var ok := ensure_animation_loaded(animation_name, target_frames)
+	if ok:
+		var protected_animation := active_animation
+		if protected_animation == &"" or not target_frames.has_animation(protected_animation):
+			protected_animation = animation_name
+		trim_animation_cache(target_frames, protected_animation)
+	var elapsed_ms := float(Time.get_ticks_usec() - started_us) / 1000.0
+	if event_bus != null:
+		event_bus.publish(&"character.animation_prefetched", {
+			"name": animation_name,
+			"reason": reason,
+			"ok": ok,
+			"alreadyResident": already_resident,
+			"elapsedMs": elapsed_ms,
+			"activeAnimation": active_animation,
+			"cacheEntries": lazy_animation_order.size(),
+			"loadedAnimations": target_frames.get_animation_names().size(),
+		})
+	return ok
 
 
 func trim_animation_cache(target_frames: SpriteFrames, active_animation: StringName) -> void:

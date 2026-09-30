@@ -167,6 +167,34 @@ func _run() -> void:
 	var fallback_declared := declared.has("idle_neutral")
 	var fallback_loaded := service.ensure_animation_loaded(&"idle_neutral", initial) \
 		and initial.has_animation(&"idle_neutral")
+	var predictive_prefetch_ok := service.prefetch_animation(
+		&"happy",
+		initial,
+		&"walk_right",
+		"contract:drag-release"
+	) \
+		and initial.has_animation(&"happy") \
+		and initial.has_animation(&"walk_right") \
+		and service.lazy_animation_order.size() <= CharacterServiceScript.LAZY_ANIMATION_CACHE_LIMIT
+
+	# Model Drag Hold -> Drag Release -> predicted edge transition. The third
+	# clip is warmed only after the release clip becomes active, allowing the
+	# bounded two-entry cache to evict Hold instead of evicting Release.
+	var transition_frames := service.build_sprite_frames(root, entry, [&"idle"])
+	service.lazy_animation_order.clear()
+	var transition_hold_ok := transition_frames != null \
+		and service.prefetch_animation(&"walk_left", transition_frames, &"walk_left", "contract:hold")
+	var transition_release_ok := transition_hold_ok \
+		and service.prefetch_animation(&"happy", transition_frames, &"walk_left", "contract:release") \
+		and transition_frames.has_animation(&"walk_left") \
+		and transition_frames.has_animation(&"happy")
+	var transition_edge_ok := transition_release_ok \
+		and service.prefetch_animation(&"sad", transition_frames, &"happy", "contract:edge") \
+		and not transition_frames.has_animation(&"walk_left") \
+		and transition_frames.has_animation(&"happy") \
+		and transition_frames.has_animation(&"sad") \
+		and service.lazy_animation_order.size() <= CharacterServiceScript.LAZY_ANIMATION_CACHE_LIMIT
+	var bounded_transition_chain_ok := transition_hold_ok and transition_release_ok and transition_edge_ok
 
 	# Two logical animations backed by one sprite sheet must reuse the same
 	# decoded/uploaded atlas. This prevents climb_ready -> climb_up from briefly
@@ -228,7 +256,8 @@ func _run() -> void:
 		and is_equal_approx(float(bible_hang_anchor[1]), 0.26)
 
 	var ok := initial_ok and walk_loaded and cache_bounded and active_kept and idle_kept \
-		and fallback_declared and fallback_loaded and embedded_thumbnails_ok and legacy_thumbnails_ok \
+		and fallback_declared and fallback_loaded and predictive_prefetch_ok \
+		and bounded_transition_chain_ok and embedded_thumbnails_ok and legacy_thumbnails_ok \
 		and preview_metadata_ok and isolated_preview_ok and encoded_preview_ok and encoded_preview_cache_hit and legacy_static_preview_ok \
 		and unmanaged_snapshot_rejected and persistent_preview_cache_ok and bible_hang_anchor_ok \
 		and shared_atlas_reused
@@ -238,6 +267,7 @@ func _run() -> void:
 		" cache_bounded=", cache_bounded,
 		" loaded=", loaded_names,
 		" fallback=", fallback_loaded,
+		" transition_chain=", bounded_transition_chain_ok,
 		" embedded_thumbnails=", embedded_thumbnails_ok,
 		" legacy_no_preview=", legacy_thumbnails_ok,
 		" metadata_only=", preview_metadata_ok,

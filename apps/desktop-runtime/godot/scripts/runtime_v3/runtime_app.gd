@@ -719,6 +719,7 @@ func _connect_app_events() -> void:
 		event_tracer.set_enabled(%DebugOverlay.visible)
 	)
 	event_bus.subscribe(&"performance.toggle_requested", func(_payload): %PerformanceOverlay.visible = not %PerformanceOverlay.visible)
+	event_bus.subscribe(&"performance_baseline.updated", func(payload): %PerformanceOverlay.apply_snapshot(payload))
 	event_bus.subscribe(&"package.install_failed", func(payload): %StatusLabel.text = "Install failed: " + str(payload.get("error", "")))
 	event_bus.subscribe(&"package.installed", func(payload): %StatusLabel.text = "Installed: %s@%s" % [payload.get("packageId", ""), payload.get("version", "")])
 	event_bus.subscribe(&"character.loaded", Callable(self, "_on_startup_character_ready"))
