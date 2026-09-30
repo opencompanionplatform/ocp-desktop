@@ -93,7 +93,11 @@ mod windows_launcher {
         update_manifest_url: Option<String>,
         update_key_id: Option<String>,
         update_public_key_base64: Option<String>,
+        update_preview_manifest_url: Option<String>,
+        update_preview_key_id: Option<String>,
+        update_preview_public_key_base64: Option<String>,
         automatic_update_checks: Option<bool>,
+        stable_update_trust_ready: Option<bool>,
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,10 +109,14 @@ mod windows_launcher {
 
     #[derive(Debug, Clone)]
     struct UpdateConfig {
-        manifest_url: String,
-        key_id: String,
-        public_key_base64: String,
+        manifest_url: Option<String>,
+        key_id: Option<String>,
+        public_key_base64: Option<String>,
+        preview_manifest_url: Option<String>,
+        preview_key_id: Option<String>,
+        preview_public_key_base64: Option<String>,
         automatic_checks: bool,
+        stable_trust_ready: bool,
     }
 
     fn parse_build_info(raw: &str) -> Result<BuildInfo, String> {
@@ -496,49 +504,84 @@ mod windows_launcher {
     }
 
     fn update_config_from_info(info: &BuildInfo) -> Result<Option<UpdateConfig>, String> {
-        let manifest = info.update_manifest_url.as_deref().unwrap_or("").trim();
-        let key_id = info.update_key_id.as_deref().unwrap_or("").trim();
-        let public_key = info
-            .update_public_key_base64
-            .as_deref()
-            .unwrap_or("")
-            .trim();
-        let configured = !manifest.is_empty() || !key_id.is_empty() || !public_key.is_empty();
-        if !configured {
+        let parse_config = |manifest: Option<&str>,
+                            key_id: Option<&str>,
+                            public_key: Option<&str>,
+                            label: &str|
+         -> Result<Option<(String, String, String)>, String> {
+            let manifest = manifest.unwrap_or("").trim();
+            let key_id = key_id.unwrap_or("").trim();
+            let public_key = public_key.unwrap_or("").trim();
+            let configured = !manifest.is_empty() || !key_id.is_empty() || !public_key.is_empty();
+            if !configured {
+                return Ok(None);
+            }
+            if manifest.is_empty() || key_id.is_empty() || public_key.is_empty() {
+                return Err(format!(
+                    "BUILD-INFO {label} update configuration is incomplete"
+                ));
+            }
+            let manifest_url =
+                normalize_https_url(manifest, &format!("{label} update manifest URL"))?;
+            if key_id.len() > 128
+                || !key_id.bytes().all(|byte| {
+                    byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-')
+                })
+            {
+                return Err(format!(
+                    "BUILD-INFO {label} update key ID contains unsupported characters"
+                ));
+            }
+            if public_key.len() != 44
+                || !public_key.ends_with('=')
+                || !public_key
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
+            {
+                return Err(format!(
+                    "BUILD-INFO {label} update public key is not a canonical Ed25519 public key"
+                ));
+            }
+            Ok(Some((
+                manifest_url,
+                key_id.to_owned(),
+                public_key.to_owned(),
+            )))
+        };
+
+        let stable = parse_config(
+            info.update_manifest_url.as_deref(),
+            info.update_key_id.as_deref(),
+            info.update_public_key_base64.as_deref(),
+            "stable",
+        )?;
+        let preview = parse_config(
+            info.update_preview_manifest_url.as_deref(),
+            info.update_preview_key_id.as_deref(),
+            info.update_preview_public_key_base64.as_deref(),
+            "preview",
+        )?;
+        if stable.is_none() && preview.is_none() {
             if info.automatic_update_checks.unwrap_or(false) {
                 return Err("BUILD-INFO enables automatic update checks without pinned update configuration".to_owned());
             }
             return Ok(None);
         }
-        if manifest.is_empty() || key_id.is_empty() || public_key.is_empty() {
-            return Err("BUILD-INFO update configuration is incomplete".to_owned());
-        }
-        let manifest_url = normalize_https_url(manifest, "updateManifestUrl")?;
-        if key_id.len() > 128
-            || !key_id.bytes().all(|byte| {
-                byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-')
-            })
-        {
-            return Err("BUILD-INFO updateKeyId contains unsupported characters".to_owned());
-        }
-        // An Ed25519 public key is exactly 32 bytes, encoded as 44 characters
-        // in canonical padded Base64. The updater performs the actual decode;
-        // the launcher rejects malformed metadata before it becomes process env.
-        if public_key.len() != 44
-            || !public_key.ends_with('=')
-            || !public_key
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
-        {
-            return Err(
-                "BUILD-INFO updatePublicKeyBase64 is not a canonical Ed25519 public key".to_owned(),
-            );
-        }
+        let (manifest_url, key_id, public_key_base64) = stable
+            .map(|(url, id, key)| (Some(url), Some(id), Some(key)))
+            .unwrap_or((None, None, None));
+        let (preview_manifest_url, preview_key_id, preview_public_key_base64) = preview
+            .map(|(url, id, key)| (Some(url), Some(id), Some(key)))
+            .unwrap_or((None, None, None));
         Ok(Some(UpdateConfig {
             manifest_url,
-            key_id: key_id.to_owned(),
-            public_key_base64: public_key.to_owned(),
+            key_id,
+            public_key_base64,
+            preview_manifest_url,
+            preview_key_id,
+            preview_public_key_base64,
             automatic_checks: info.automatic_update_checks.unwrap_or(false),
+            stable_trust_ready: info.stable_update_trust_ready.unwrap_or(false),
         }))
     }
 
@@ -982,18 +1025,34 @@ mod windows_launcher {
             layout.update_health.to_string_lossy().into_owned(),
         );
         if let Some(update) = update_config {
-            envs.insert(
-                "OCP_UPDATE_MANIFEST_URL".into(),
-                update.manifest_url.clone(),
-            );
-            envs.insert("OCP_UPDATE_KEY_ID".into(), update.key_id.clone());
-            envs.insert(
-                "OCP_UPDATE_PUBLIC_KEY_B64".into(),
-                update.public_key_base64.clone(),
-            );
+            if let (Some(manifest), Some(key_id), Some(public_key)) = (
+                update.manifest_url.as_ref(),
+                update.key_id.as_ref(),
+                update.public_key_base64.as_ref(),
+            ) {
+                envs.insert("OCP_UPDATE_MANIFEST_URL".into(), manifest.clone());
+                envs.insert("OCP_UPDATE_KEY_ID".into(), key_id.clone());
+                envs.insert("OCP_UPDATE_PUBLIC_KEY_B64".into(), public_key.clone());
+            }
+            if let (Some(manifest), Some(key_id), Some(public_key)) = (
+                update.preview_manifest_url.as_ref(),
+                update.preview_key_id.as_ref(),
+                update.preview_public_key_base64.as_ref(),
+            ) {
+                envs.insert("OCP_UPDATE_PREVIEW_MANIFEST_URL".into(), manifest.clone());
+                envs.insert("OCP_UPDATE_PREVIEW_KEY_ID".into(), key_id.clone());
+                envs.insert(
+                    "OCP_UPDATE_PREVIEW_PUBLIC_KEY_B64".into(),
+                    public_key.clone(),
+                );
+            }
             envs.insert(
                 "OCP_UPDATE_AUTOMATIC_CHECKS".into(),
                 if update.automatic_checks { "1" } else { "0" }.into(),
+            );
+            envs.insert(
+                "OCP_UPDATE_STABLE_TRUST_READY".into(),
+                if update.stable_trust_ready { "1" } else { "0" }.into(),
             );
         }
         if let Ok(expected) = env::var("OCP_UPDATE_EXPECTED_VERSION") {
@@ -1442,21 +1501,47 @@ mod windows_launcher {
         #[test]
         fn update_config_requires_complete_pinned_https_metadata() {
             let info = parse_build_info(
-                "{\"storeOrigin\":\"https://ocp.example\",\"updateManifestUrl\":\"https://github.com/opencompanionplatform/ocp-releases/releases/latest/download/update-manifest.json\",\"updateKeyId\":\"ed25519:release-1\",\"updatePublicKeyBase64\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"automaticUpdateChecks\":true}",
+                "{\"storeOrigin\":\"https://ocp.example\",\"updateManifestUrl\":\"https://github.com/opencompanionplatform/ocp-releases/releases/latest/download/update-manifest.json\",\"updateKeyId\":\"ed25519:release-1\",\"updatePublicKeyBase64\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"automaticUpdateChecks\":true,\"stableUpdateTrustReady\":true}",
             )
             .expect("configured BUILD-INFO should parse");
             let update = update_config_from_info(&info)
                 .expect("update config should validate")
                 .expect("update config should exist");
-            assert_eq!(update.key_id, "ed25519:release-1");
-            assert!(update.manifest_url.starts_with("https://github.com/"));
+            assert_eq!(update.key_id.as_deref(), Some("ed25519:release-1"));
+            assert!(update
+                .manifest_url
+                .as_deref()
+                .unwrap_or_default()
+                .starts_with("https://github.com/"));
             assert!(update.automatic_checks);
+            assert!(update.stable_trust_ready);
+            assert!(update.preview_manifest_url.is_none());
+
+            let preview = parse_build_info(
+                "{\"updatePreviewManifestUrl\":\"https://github.com/opencompanionplatform/ocp-releases/releases/download/v0.2.0-preview/update-manifest.json\",\"updatePreviewKeyId\":\"ed25519:preview-1\",\"updatePreviewPublicKeyBase64\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"automaticUpdateChecks\":true}",
+            )
+            .expect("preview BUILD-INFO should parse");
+            let preview_update = update_config_from_info(&preview)
+                .expect("preview update config should validate")
+                .expect("preview update config should exist");
+            assert!(preview_update.manifest_url.is_none());
+            assert_eq!(
+                preview_update.preview_key_id.as_deref(),
+                Some("ed25519:preview-1")
+            );
+            assert!(!preview_update.stable_trust_ready);
 
             let partial = parse_build_info(
                 "{\"updateManifestUrl\":\"https://updates.example/manifest.json\",\"automaticUpdateChecks\":true}",
             )
             .expect("partial JSON should parse structurally");
             assert!(update_config_from_info(&partial).is_err());
+
+            let partial_preview = parse_build_info(
+                "{\"updatePreviewManifestUrl\":\"https://updates.example/preview.json\",\"automaticUpdateChecks\":true}",
+            )
+            .expect("partial preview JSON should parse structurally");
+            assert!(update_config_from_info(&partial_preview).is_err());
 
             let unpinned_auto = parse_build_info("{\"automaticUpdateChecks\":true}")
                 .expect("automatic-only JSON should parse structurally");

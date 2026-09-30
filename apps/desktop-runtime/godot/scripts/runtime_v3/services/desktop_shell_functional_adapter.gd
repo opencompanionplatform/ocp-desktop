@@ -68,7 +68,7 @@ const FONT_FAMILIES := {
 }
 const CONTROL_FONT_FAMILIES := ["Noto Sans Thai", "Segoe UI", "Tahoma", "Leelawadee UI", "Arial", "Inter"]
 const BUBBLE_STYLES := ["Rounded", "Compact", "Soft"]
-const UPDATE_CHANNELS := ["stable", "beta", "nightly"]
+const UPDATE_CHANNELS := ["stable", "preview"]
 const AI_PROVIDER_IDS := ["offline", "ollama", "openai-compatible"]
 const AI_TIMEOUT_SECONDS := [15, 30, 45, 60, 120]
 const TTS_PROVIDER_IDS := ["auto", "system"]
@@ -104,6 +104,8 @@ const UPDATE_MESSAGES := {
 	"update-applied": "The update was applied and passed its startup health check.",
 	"update-rolled-back": "The update failed and the previous version was restored.",
 	"update-config-incomplete": "Signed update configuration is incomplete.",
+	"update-preview-config-incomplete": "Preview update configuration is incomplete.",
+	"update-stable-trust-pending": "Stable updates stay locked until Production signing trust is ready.",
 	"update-updater-missing": "The signed Runtime updater is not installed.",
 	"update-check-start-failed": "Runtime could not start the signed update check.",
 	"update-check-failed": "The signed update check failed.",
@@ -560,6 +562,8 @@ func _handle_command(command: Dictionary, correlation_id: String = "") -> void:
 			result = _start_update_check(command, correlation_id)
 		"control.update.apply":
 			result = _start_update_apply(command)
+		"control.update.install-on-restart":
+			result = _set_update_install_on_restart(command)
 		"character.activate":
 			_activate_character(command)
 		"character.uninstall":
@@ -644,7 +648,7 @@ func _handle_command(command: Dictionary, correlation_id: String = "") -> void:
 			result = {"status": "failed", "errorCode": "unsupported-command"}
 	# Control Center commands use correlated results. Existing character/chat
 	# commands keep their established fire-and-project behaviour.
-	if command_type in ["control.settings.update", "control.ai.update", "control.ai.test", "control.ai.discover", "control.voice.test", "control.update.check", "control.update.apply", "character.effects.update", "character.effects.preview-level-up", "effect-pack.equip", "effect-pack.unequip", "effect-pack.slot-enabled", "effect-pack.preview", "effect-pack.preview-tune", "effect-pack.character-profile.save", "effect-pack.character-profile.reset", "effect-pack.preview-rank", "chat.reconnect", "chat.session.clear", "chat.turn.cancel", "chat.message.edit", "chat.message.regenerate", "chat.feedback.set", "chat.message.read-aloud", "chat.session.new", "account.sign-out", "cloud.library.refresh", "cloud.library.install", "cloud.sync.now"]:
+	if command_type in ["control.settings.update", "control.ai.update", "control.ai.test", "control.ai.discover", "control.voice.test", "control.update.check", "control.update.apply", "control.update.install-on-restart", "character.effects.update", "character.effects.preview-level-up", "effect-pack.equip", "effect-pack.unequip", "effect-pack.slot-enabled", "effect-pack.preview", "effect-pack.preview-tune", "effect-pack.character-profile.save", "effect-pack.character-profile.reset", "effect-pack.preview-rank", "chat.reconnect", "chat.session.clear", "chat.turn.cancel", "chat.message.edit", "chat.message.regenerate", "chat.feedback.set", "chat.message.read-aloud", "chat.session.new", "account.sign-out", "cloud.library.refresh", "cloud.library.install", "cloud.sync.now"]:
 		_record_command_result(correlation_id, command_type, result)
 	_write_snapshot()
 
@@ -975,14 +979,14 @@ func _apply_control_settings(command: Dictionary) -> Dictionary:
 	var settings: Dictionary = value
 	var allowed_keys := [
 		"themePreset", "fontFamily", "textScale", "bubbleStyle", "language", "showBubbles",
-		"clickThroughEnabled", "startWithWindows", "offlinePresenceEnabled", "llmCompanionModeEnabled", "updateChannel", "reduceMotion",
+		"clickThroughEnabled", "startWithWindows", "offlinePresenceEnabled", "llmCompanionModeEnabled", "updateChannel", "automaticUpdateChecks", "reduceMotion",
 	]
 	if not _has_only_keys(settings, allowed_keys) or settings.size() != allowed_keys.size():
 		return {"status": "failed", "errorCode": "invalid-settings"}
 	for key in ["themePreset", "fontFamily", "textScale", "bubbleStyle", "language", "updateChannel"]:
 		if typeof(settings.get(key)) != TYPE_STRING:
 			return {"status": "failed", "errorCode": "invalid-settings"}
-	for key in ["showBubbles", "clickThroughEnabled", "startWithWindows", "offlinePresenceEnabled", "llmCompanionModeEnabled", "reduceMotion"]:
+	for key in ["showBubbles", "clickThroughEnabled", "startWithWindows", "offlinePresenceEnabled", "llmCompanionModeEnabled", "automaticUpdateChecks", "reduceMotion"]:
 		if typeof(settings.get(key)) != TYPE_BOOL:
 			return {"status": "failed", "errorCode": "invalid-settings"}
 	var theme := str(settings["themePreset"])
@@ -1018,12 +1022,16 @@ func _apply_control_settings(command: Dictionary) -> Dictionary:
 		"offline_presence_enabled": bool(settings["offlinePresenceEnabled"]),
 		"llm_companion_mode_enabled": bool(settings["llmCompanionModeEnabled"]),
 		"update_channel": update_channel,
+		"automatic_update_checks": bool(settings["automaticUpdateChecks"]),
 		"reduce_motion": bool(settings["reduceMotion"]),
 	}
 	if not bool(settings_service.call("save_settings", persisted)):
 		if startup_changed and is_instance_valid(startup_service):
 			startup_service.call("set_enabled", previous_startup)
 		return {"status": "failed", "errorCode": "settings-save-failed"}
+	var update_service := _service(&"update_service")
+	if is_instance_valid(update_service) and update_service.has_method("refresh_policy"):
+		update_service.call("refresh_policy")
 	if is_instance_valid(context) and context.has_method("update_runtime_config"):
 		context.update_runtime_config({"click_through_enabled": bool(settings["clickThroughEnabled"])})
 	if is_instance_valid(event_bus):
@@ -1178,6 +1186,23 @@ func _start_update_apply(command: Dictionary) -> Dictionary:
 	return {"status": "accepted", "errorCode": ""}
 
 
+func _set_update_install_on_restart(command: Dictionary) -> Dictionary:
+	if not _has_only_keys(command, ["type", "enabled"]) or command.size() != 2 or typeof(command.get("enabled")) != TYPE_BOOL:
+		return {"status": "failed", "errorCode": "invalid-update-command"}
+	var update_service := _service(&"update_service")
+	if not is_instance_valid(update_service) or not update_service.has_method("request_install_on_restart"):
+		return {"status": "failed", "errorCode": "update-unavailable"}
+	var result_value: Variant = update_service.call("request_install_on_restart", bool(command.get("enabled", false)))
+	if not result_value is Dictionary:
+		return {"status": "failed", "errorCode": "update-policy-persist-failed"}
+	var result: Dictionary = result_value
+	if not bool(result.get("ok", false)):
+		var message := str(result.get("message", "")).to_lower()
+		return {"status": "failed", "errorCode": "update-not-ready" if message.contains("no verified staged") else "update-policy-persist-failed"}
+	_refresh_update_state_from_service()
+	return {"status": "succeeded", "errorCode": ""}
+
+
 func _request_update_shutdown() -> void:
 	if is_instance_valid(event_bus):
 		event_bus.publish(&"window.exit_requested", {"source": "electron-update-apply"})
@@ -1193,6 +1218,10 @@ func _safe_update_request_error(message: String, applying: bool) -> String:
 		if normalized.contains("helper") and normalized.contains("not installed"):
 			return "update-helper-missing"
 		return "update-apply-start-failed"
+	if normalized.contains("stable update trust"):
+		return "update-stable-trust-pending"
+	if normalized.contains("preview update configuration"):
+		return "update-preview-config-incomplete"
 	if normalized.contains("configuration is incomplete") or normalized.contains("https"):
 		return "update-config-incomplete"
 	if normalized.contains("updater") and normalized.contains("not installed"):
@@ -2117,14 +2146,18 @@ func _refresh_update_state_from_service() -> void:
 	var raw_state := str(status.get("state", "idle"))
 	var availability := str(status.get("checkAvailabilityCode", "config-incomplete"))
 	if raw_state == "idle" and availability != "ready":
-		_set_update_error("update-updater-missing" if availability == "updater-missing" else "update-config-incomplete")
+		match availability:
+			"updater-missing": _set_update_error("update-updater-missing")
+			"preview-config-incomplete": _set_update_error("update-preview-config-incomplete")
+			"stable-trust-pending": _set_update_error("update-stable-trust-pending")
+			_: _set_update_error("update-config-incomplete")
 		return
 	_set_update_state(raw_state, str(status.get("targetVersion", "")))
 
 
 func _set_update_error(error_code: String) -> void:
 	var safe_code := error_code if UPDATE_MESSAGES.has(error_code) else "update-failed"
-	var state := "unavailable" if safe_code in ["update-unavailable", "update-config-incomplete", "update-updater-missing"] else "failed"
+	var state := "unavailable" if safe_code in ["update-unavailable", "update-config-incomplete", "update-preview-config-incomplete", "update-stable-trust-pending", "update-updater-missing"] else "failed"
 	update_state = {"state": state, "messageCode": safe_code, "targetVersion": ""}
 
 
@@ -4054,6 +4087,8 @@ func _control_settings_snapshot() -> Dictionary:
 	if bubble_style not in BUBBLE_STYLES:
 		bubble_style = "Rounded"
 	var update_channel := str(settings.get("update_channel", "stable")).to_lower()
+	if update_channel in ["beta", "nightly"]:
+		update_channel = "preview"
 	if update_channel not in UPDATE_CHANNELS:
 		update_channel = "stable"
 	return {
@@ -4068,6 +4103,7 @@ func _control_settings_snapshot() -> Dictionary:
 		"offlinePresenceEnabled": bool(settings.get("offline_presence_enabled", true)),
 		"llmCompanionModeEnabled": bool(settings.get("llm_companion_mode_enabled", false)),
 		"updateChannel": update_channel,
+		"automaticUpdateChecks": bool(settings.get("automatic_update_checks", true)),
 		"reduceMotion": bool(settings.get("reduce_motion", false)),
 	}
 
@@ -4231,6 +4267,8 @@ func _voice_health_snapshot() -> Dictionary:
 func _update_control_snapshot() -> Dictionary:
 	var settings: Dictionary = context.settings if is_instance_valid(context) else {}
 	var channel := str(settings.get("update_channel", "stable")).strip_edges().to_lower()
+	if channel in ["beta", "nightly"]:
+		channel = "preview"
 	if channel not in UPDATE_CHANNELS:
 		channel = "stable"
 	var service_status: Dictionary = {}
@@ -4258,6 +4296,10 @@ func _update_control_snapshot() -> Dictionary:
 		"targetVersion": target_version,
 		"canCheck": can_check,
 		"canApply": can_apply,
+		"automaticChecksEnabled": bool(service_status.get("automaticChecksEnabled", false)),
+		"nextAutomaticCheckSeconds": maxi(0, int(service_status.get("nextAutomaticCheckSeconds", 0))),
+		"stableTrustReady": bool(service_status.get("stableTrustReady", false)),
+		"installOnRestart": bool(service_status.get("installOnRestart", false)) and can_apply,
 	}
 
 

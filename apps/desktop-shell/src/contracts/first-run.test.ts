@@ -37,6 +37,7 @@ const firstRunRuntime = (overrides: Partial<RuntimeSnapshot> = {}): RuntimeSnaps
       offlinePresenceEnabled: true,
       llmCompanionModeEnabled: false,
       updateChannel: "stable",
+      automaticUpdateChecks: true,
       reduceMotion: false,
     },
     resources: null,

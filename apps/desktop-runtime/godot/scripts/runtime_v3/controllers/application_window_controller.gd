@@ -1130,7 +1130,7 @@ func _configure_update_channels() -> void:
 	if not is_instance_valid(update_channel_option):
 		return
 	update_channel_option.clear()
-	for channel in ["Stable", "Beta", "Nightly"]:
+	for channel in ["Stable", "Preview"]:
 		update_channel_option.add_item(channel)
 	var popup := update_channel_option.get_popup()
 	if is_instance_valid(popup):
@@ -1217,6 +1217,8 @@ func _sync_settings_controls() -> void:
 			if is_instance_valid(event_bus):
 				event_bus.publish(&"click_through.refresh_requested", {})
 	var channel := str(settings.get("update_channel", "stable")).to_lower()
+	if channel in ["beta", "nightly"]:
+		channel = "preview"
 	if is_instance_valid(update_channel_option):
 		for index in range(update_channel_option.item_count):
 			if update_channel_option.get_item_text(index).to_lower() == channel:

@@ -29,7 +29,7 @@ export const MAX_RUNTIME_SNAPSHOT_AGE_MS = 10_000;
 export const MAX_RUNTIME_COMMAND_SNAPSHOT_AGE_MS = 3_000;
 const COMMAND_TYPES = new Set([
   "settings.update", "control.settings.update", "control.ai.update", "control.ai.test", "control.ai.discover", "control.voice.test", "character.activate", "character.uninstall", "character.effects.update", "character.effects.preview-level-up", "effect-pack.equip", "effect-pack.unequip", "effect-pack.slot-enabled", "effect-pack.preview", "effect-pack.preview-tune", "effect-pack.character-profile.save", "effect-pack.character-profile.reset", "effect-pack.preview-rank", "character.preview.open", "character.preview.select", "character.preview.thumbnail-page",
-  "control.update.check", "control.update.apply",
+  "control.update.check", "control.update.apply", "control.update.install-on-restart",
   "character.preview.play", "character.preview.pause", "character.preview.set-loop",
   "character.preview.set-speed", "character.preview.close", "chat.submit", "chat.reconnect", "chat.session.clear",
   "chat.turn.cancel", "chat.message.edit", "chat.message.regenerate", "chat.feedback.set", "chat.message.read-aloud", "chat.session.new", "account.sign-out",
@@ -44,6 +44,7 @@ export type RuntimeBridgeCommand =
   | Readonly<{ type: "control.settings.update"; settings: ControlCenterSettings }>
   | Readonly<{ type: "control.ai.update" | "control.ai.test" | "control.ai.discover" | "control.voice.test"; settings: AIControlSettings }>
   | Readonly<{ type: "control.update.check" | "control.update.apply" }>
+  | Readonly<{ type: "control.update.install-on-restart"; enabled: boolean }>
   | Readonly<{ type: "character.activate" | "character.uninstall" | "character.effects.preview-level-up" | "character.preview.open" | "character.preview.play" | "character.preview.pause" | "character.preview.close"; packageId: string; version: string }>
   | Readonly<{ type: "character.effects.update"; levelUpEnabled: boolean; auraEnabled: boolean }>
   | Readonly<{ type: "effect-pack.equip"; packageId: string; version: string; slot: "" | "bodyAura" | "groundRune" | "levelUpBurst" }>
@@ -309,6 +310,9 @@ export function sanitizeRuntimeBridgeCommand(value: unknown): RuntimeBridgeComma
   }
   if ((value.type === "control.update.check" || value.type === "control.update.apply") && hasOnlyKeys(value, ["type"]) && Object.keys(value).length === 1) {
     return { type: value.type };
+  }
+  if (value.type === "control.update.install-on-restart" && hasOnlyKeys(value, ["type", "enabled"]) && Object.keys(value).length === 2 && typeof value.enabled === "boolean") {
+    return { type: value.type, enabled: value.enabled };
   }
   const type = value.type;
   if ((type === "character.activate" || type === "character.uninstall" || type === "character.effects.preview-level-up" || type === "character.preview.open" || type === "character.preview.play" || type === "character.preview.pause" || type === "character.preview.close") && hasOnlyKeys(value, ["type", "packageId", "version"]) && validIdentity(value)) {

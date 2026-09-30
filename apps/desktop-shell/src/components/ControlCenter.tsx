@@ -130,6 +130,7 @@ function SettingsPage({ runtime, locale, onPreviewAppearance, onRunSetup }: Read
         <ToggleRow checked={draft.offlinePresenceEnabled} disabled={false} detail={t("settings.offline_presence.detail")} label={t("settings.offline_presence")} onChange={(offlinePresenceEnabled) => update({ offlinePresenceEnabled })} />
         <ToggleRow checked={draft.llmCompanionModeEnabled} disabled={runtime?.controlCenter?.ai?.settings.providerId !== "ollama"} detail={t("settings.llm_companion.detail")} label={t("settings.llm_companion")} onChange={(llmCompanionModeEnabled) => update({ llmCompanionModeEnabled })} />
         <label className="channel-field">{t("settings.update_channel")}<select onChange={(event) => update({ updateChannel: event.target.value as ControlCenterSettings["updateChannel"] })} value={draft.updateChannel}>{controlUpdateChannels.map((channel) => <option key={channel} value={channel}>{channel[0].toUpperCase() + channel.slice(1)}</option>)}</select></label>
+        <ToggleRow checked={draft.automaticUpdateChecks} disabled={false} detail={t("settings.automatic_updates.detail")} label={t("settings.automatic_updates")} onChange={(automaticUpdateChecks) => update({ automaticUpdateChecks })} />
       </article>
       <article className="control-card resource-card"><h2>{t("settings.resource")}</h2><p>{t("settings.resource.detail")}</p>{resources?.available ? <><div className="resource-gauges"><label>{t("settings.resource.system_cpu", "System CPU")} <b>{Math.round(resources.cpuPercent)}%</b><progress max="100" value={resources.cpuPercent} /></label><label>{t("settings.resource.system_memory", "System memory")} <b>{Math.round(resources.memoryPercent)}%</b><progress max="100" value={resources.memoryPercent} /></label><strong className={resources.pressure === "high" ? "resource-high" : ""}>{resources.pressure === "high" ? t("settings.resource.high") : t("settings.resource.normal")}</strong></div>{hasResourceBreakdown ? <div className="resource-memory-summary"><div className="resource-total"><span>{t("settings.resource.ocp_total", "OCP total")}</span><b>{formatMemoryMb(resources.ocpMemoryMb ?? 0)}</b></div><dl className="resource-breakdown"><div><dt>{t("settings.resource.runtime", "Runtime")}</dt><dd>{formatMemoryMb(resources.runtimeMemoryMb ?? 0)}</dd></div><div><dt>{t("settings.resource.desktop_shell", "Desktop Shell")}</dt><dd>{formatMemoryMb(resources.desktopShellMemoryMb ?? 0)}</dd></div><div><dt>{t("settings.resource.kernel", "Kernel")}</dt><dd>{formatMemoryMb(resources.kernelMemoryMb ?? 0)}</dd></div><div><dt>{t("settings.resource.native_host", "Native host")}</dt><dd>{formatMemoryMb(resources.nativeHostMemoryMb ?? 0)}</dd></div></dl>{(resources.aiMemoryMb ?? 0) > 0 ? <div className="resource-ai"><span>{t("settings.resource.local_ai", "Local AI (separate)")}</span><b>{formatMemoryMb(resources.aiMemoryMb ?? 0)}</b></div> : null}</div> : null}</> : <p className="resource-unavailable">{t("settings.resource.unavailable")}</p>}</article>
       <article className="control-card onboarding-card"><h2>{t("settings.guided_setup", "Guided setup")}</h2><p>{t("settings.guided_setup.detail", "Run the first-use wizard again to review your companion, AI provider and voice choices.")}</p><button className="button" disabled={!runtime || !onRunSetup} onClick={onRunSetup} type="button">{t("settings.guided_setup.run", "Run setup wizard")}</button></article>
@@ -263,7 +264,7 @@ function updateErrorMessage(errorCode: string): string {
 
 function UpdatesPage({ runtime, locale }: Readonly<{ runtime: RuntimeSnapshot | null; locale: LocaleName }>): ReactElement {
   const updates = runtime?.controlCenter?.updates ?? null;
-  const [pending, setPending] = useState<Readonly<{ id: string; type: "check" | "apply" }> | null>(null);
+  const [pending, setPending] = useState<Readonly<{ id: string; type: "check" | "apply" | "restart-policy" }> | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [errorCode, setErrorCode] = useState("");
   const t = (key: string, fallback?: string, values?: Readonly<Record<string, string | number>>): string => translate(locale, key, fallback, values);
@@ -301,6 +302,12 @@ function UpdatesPage({ runtime, locale }: Readonly<{ runtime: RuntimeSnapshot | 
       .then((id) => setPending({ id, type }))
       .catch(() => setErrorCode("adapter-unavailable"));
   };
+  const submitInstallOnRestart = (enabled: boolean): void => {
+    setErrorCode("");
+    void window.ocpShell.sendRuntimeCommand({ type: "control.update.install-on-restart", enabled })
+      .then((id) => setPending({ id, type: "restart-policy" }))
+      .catch(() => setErrorCode("adapter-unavailable"));
+  };
   const cancelApply = (): void => setConfirming(false);
   const confirmApply = (): void => {
     setConfirming(false);
@@ -308,14 +315,21 @@ function UpdatesPage({ runtime, locale }: Readonly<{ runtime: RuntimeSnapshot | 
   };
   const busy = pending !== null || updates.state === "checking" || ["apply-requested", "stopping", "validating", "swapping", "restarting"].includes(updates.state);
   const statusMessage = errorCode ? updateErrorMessage(errorCode) : updates.message;
+  const nextCheckMinutes = Math.max(0, Math.ceil(updates.nextAutomaticCheckSeconds / 60));
+  const automaticStatus = updates.automaticChecksEnabled
+    ? t("updates.automatic.enabled", undefined, { minutes: nextCheckMinutes })
+    : t("updates.automatic.disabled");
+  const trustStatus = updates.channel === "stable"
+    ? (updates.stableTrustReady ? t("updates.trust.ready") : t("updates.trust.pending"))
+    : t("updates.trust.preview");
 
   return <section className="control-page updates-control-page">
     <div className="control-page-heading"><div><span>{t("updates.eyebrow")}</span><h1>{t("updates.title")}</h1><p>{t("updates.subtitle")}</p></div><button className="button primary" disabled={!updates.canCheck || busy} onClick={() => submit("check")} type="button">{pending?.type === "check" || updates.state === "checking" ? t("updates.checking") : t("updates.check")}</button></div>
     <div className={`settings-result ${errorCode ? "failed" : updates.state === "applied" ? "succeeded" : busy ? "working" : "idle"}`} aria-live="polite">{statusMessage}</div>
     <div className="update-card-grid">
-      <article className="control-card update-status-card"><h2>{t("updates.release")}</h2><p>{t("updates.release.detail")}</p><dl className="update-facts"><div><dt>{t("updates.current")}</dt><dd>{updates.currentVersion}</dd></div><div><dt>{t("updates.channel")}</dt><dd className="update-channel-pill">{updates.channel}</dd></div><div><dt>{t("updates.target")}</dt><dd>{updates.targetVersion || t("updates.none")}</dd></div><div><dt>{t("updates.runtime_state")}</dt><dd>{updates.state.replaceAll("-", " ")}</dd></div></dl></article>
+      <article className="control-card update-status-card"><h2>{t("updates.release")}</h2><p>{t("updates.release.detail")}</p><dl className="update-facts"><div><dt>{t("updates.current")}</dt><dd>{updates.currentVersion}</dd></div><div><dt>{t("updates.channel")}</dt><dd className="update-channel-pill">{updates.channel}</dd></div><div><dt>{t("updates.target")}</dt><dd>{updates.targetVersion || t("updates.none")}</dd></div><div><dt>{t("updates.runtime_state")}</dt><dd>{updates.state.replaceAll("-", " ")}</dd></div><div><dt>{t("updates.automatic.label")}</dt><dd>{automaticStatus}</dd></div><div><dt>{t("updates.trust.label")}</dt><dd>{trustStatus}</dd></div></dl></article>
       <article className="control-card update-security-card"><h2>{t("updates.security")}</h2><p>{t("updates.security.detail")}</p><ul><li>{t("updates.security.manifest")}</li><li>{t("updates.security.signature")}</li><li>{t("updates.security.no_source")}</li><li>{t("updates.security.rollback")}</li></ul></article>
-      <article className="control-card update-actions-card"><h2>{t("updates.install_card")}</h2><p>{t("updates.install_detail")}</p><button className="button primary update-apply-button" disabled={!updates.canApply || busy} onClick={() => setConfirming(true)} type="button">{t("updates.install")}</button><small>{updates.canApply ? t("updates.install_ready", undefined, { version: updates.targetVersion }) : t("updates.install_check")}</small></article>
+      <article className="control-card update-actions-card"><h2>{t("updates.install_card")}</h2><p>{t("updates.install_detail")}</p><button className="button primary update-apply-button" disabled={!updates.canApply || busy} onClick={() => setConfirming(true)} type="button">{t("updates.install")}</button><button className="button secondary update-apply-button" disabled={!updates.canApply || busy} onClick={() => submitInstallOnRestart(!updates.installOnRestart)} type="button">{updates.installOnRestart ? t("updates.install_restart.cancel") : t("updates.install_restart")}</button><small>{updates.installOnRestart ? t("updates.install_restart.scheduled", undefined, { version: updates.targetVersion }) : updates.canApply ? t("updates.install_ready", undefined, { version: updates.targetVersion }) : t("updates.install_check")}</small></article>
     </div>
     {confirming ? <div className="update-confirm-backdrop"><div aria-describedby="update-confirm-detail" aria-labelledby="update-confirm-title" aria-modal="true" className="update-confirm-dialog" role="alertdialog"><span>{t("updates.confirm.eyebrow")}</span><h2 id="update-confirm-title">{t("updates.confirm.title", undefined, { version: updates.targetVersion })}</h2><p id="update-confirm-detail">{t("updates.confirm.detail")}</p><div><button autoFocus className="button secondary" onClick={cancelApply} type="button">{t("common.cancel")}</button><button className="button primary" disabled={!updates.canApply} onClick={confirmApply} type="button">{t("common.confirm_install")}</button></div></div></div> : null}
   </section>;

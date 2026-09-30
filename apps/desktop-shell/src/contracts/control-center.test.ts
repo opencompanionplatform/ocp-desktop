@@ -27,7 +27,8 @@ const settings = {
   startWithWindows: true,
   offlinePresenceEnabled: true,
   llmCompanionModeEnabled: false,
-  updateChannel: "beta",
+  updateChannel: "preview",
+  automaticUpdateChecks: true,
   reduceMotion: true,
 } as const;
 
@@ -132,12 +133,14 @@ describe("Control Center boundary", () => {
       currentVersion: "0.1.0", channel: "stable", state: "ready",
       messageCode: "update-ready", message: updateMessages["update-ready"],
       targetVersion: "0.2.0", canCheck: true, canApply: true,
+      automaticChecksEnabled: true, nextAutomaticCheckSeconds: 3600, stableTrustReady: true, installOnRestart: false,
     } as const;
     expect(sanitizeUpdateControlSnapshot(update)).toEqual(update);
     expect(sanitizeUpdateControlSnapshot({ ...update, message: "staged at C:\\private\\update.zip" })).toBeNull();
     expect(sanitizeUpdateControlSnapshot({ ...update, releaseUrl: "https://example.test/update.zip" })).toBeNull();
     expect(sanitizeUpdateControlSnapshot({ ...update, signingKey: "secret" })).toBeNull();
     expect(sanitizeUpdateControlSnapshot({ ...update, state: "idle", canApply: true })).toBeNull();
+    expect(sanitizeUpdateControlSnapshot({ ...update, canApply: false, installOnRestart: true })).toBeNull();
     expect(sanitizeUpdateControlSnapshot({ ...update, targetVersion: "..\\payload" })).toBeNull();
   });
 });

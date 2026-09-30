@@ -3,13 +3,20 @@ class_name RuntimeV3UpdateService
 
 ## Guarded bridge to the Rust staging-only updater and explicit apply helper.
 ## The Rust updater only verifies and stages. Apply runs in a separate process.
-## Automatic update checks are intentionally staging-only: OCP may discover,
-## download, and verify a signed update in the background, but installation
-## remains an explicit user action.
+## Preview may discover/download/verify in the background. Stable is fail-closed
+## until the packaged Production trust boundary explicitly enables it.
 
 const AUTO_CHECK_START_DELAY_SECONDS := 45.0
 const AUTO_CHECK_INTERVAL_SECONDS := 6.0 * 60.0 * 60.0
 const AUTOMATIC_CHECK_ENV := "OCP_UPDATE_AUTOMATIC_CHECKS"
+const PREVIEW_MANIFEST_ENV := "OCP_UPDATE_PREVIEW_MANIFEST_URL"
+const PREVIEW_KEY_ID_ENV := "OCP_UPDATE_PREVIEW_KEY_ID"
+const PREVIEW_PUBLIC_KEY_ENV := "OCP_UPDATE_PREVIEW_PUBLIC_KEY_B64"
+const STABLE_TRUST_READY_ENV := "OCP_UPDATE_STABLE_TRUST_READY"
+const USER_AUTOMATIC_CHECKS_SETTING := "automatic_update_checks"
+const STABLE_CHANNEL := "stable"
+const PREVIEW_CHANNEL := "preview"
+const INSTALL_ON_RESTART_MARKER_FILE := "install-on-restart.json"
 
 var _status_path := ""
 var _last_status_signature := ""
@@ -20,16 +27,25 @@ var _last_version := ""
 var _check_in_flight := false
 var _automatic_checks_enabled := false
 var _next_automatic_check_msec := 0
+var _install_on_restart := false
 
 
 func start() -> void:
 	_status_path = _configured_status_path()
-	_automatic_checks_enabled = _environment_flag_enabled(AUTOMATIC_CHECK_ENV)
-	_schedule_next_automatic_check(AUTO_CHECK_START_DELAY_SECONDS)
+	refresh_policy()
+	if is_instance_valid(event_bus):
+		event_bus.subscribe(&"window.exit_requested", Callable(self, "_on_window_exit_requested"))
 	set_process(true)
 
 
+func refresh_policy() -> void:
+	_automatic_checks_enabled = _automatic_checks_allowed()
+	_schedule_next_automatic_check(AUTO_CHECK_START_DELAY_SECONDS)
+
+
 func stop() -> void:
+	if is_instance_valid(event_bus):
+		event_bus.unsubscribe(&"window.exit_requested", Callable(self, "_on_window_exit_requested"))
 	set_process(false)
 	_check_in_flight = false
 	_next_automatic_check_msec = 0
@@ -60,9 +76,11 @@ func _process(_delta: float) -> void:
 	if state == "staged":
 		_staged_artifact_path = artifact_path
 		_staged_version = version
+		_install_on_restart = _load_install_on_restart_marker(version)
 	elif state in ["applied", "rolled_back", "rollback_failed", "failed", "error", "no_update"]:
 		_staged_artifact_path = ""
 		_staged_version = ""
+		_clear_install_on_restart_marker()
 	_check_in_flight = false
 	_schedule_next_automatic_check(AUTO_CHECK_INTERVAL_SECONDS)
 	event_bus.publish(&"update.status_changed", {
@@ -89,12 +107,15 @@ func _request_check(source: String) -> Dictionary:
 		return _result(false, "Update check is already running", -1)
 	if can_apply():
 		return _result(false, "A verified staged update is already ready to install", -1)
-	var manifest_url := OS.get_environment("OCP_UPDATE_MANIFEST_URL")
-	var key_id := OS.get_environment("OCP_UPDATE_KEY_ID")
-	var public_key := OS.get_environment("OCP_UPDATE_PUBLIC_KEY_B64")
+	var channel := _selected_channel()
+	if channel == STABLE_CHANNEL and not _stable_trust_ready():
+		return _result(false, "stable update trust is not ready", -1)
+	var manifest_url := _manifest_url_for_channel(channel)
+	var key_id := _key_id_for_channel(channel)
+	var public_key := _public_key_for_channel(channel)
 	var updater := OS.get_environment("OCP_UPDATER_EXE")
 	if manifest_url.is_empty() or key_id.is_empty() or public_key.is_empty():
-		return _result(false, "signed update configuration is incomplete", -1)
+		return _result(false, "%s update configuration is incomplete" % channel, -1)
 	if not manifest_url.begins_with("https://"):
 		return _result(false, "manifest URL must use HTTPS", -1)
 	if updater.is_empty() or not FileAccess.file_exists(updater):
@@ -146,11 +167,14 @@ func can_check() -> bool:
 
 
 func check_availability_code() -> String:
-	var manifest_url := OS.get_environment("OCP_UPDATE_MANIFEST_URL")
-	var key_id := OS.get_environment("OCP_UPDATE_KEY_ID")
-	var public_key := OS.get_environment("OCP_UPDATE_PUBLIC_KEY_B64")
+	var channel := _selected_channel()
+	if channel == STABLE_CHANNEL and not _stable_trust_ready():
+		return "stable-trust-pending"
+	var manifest_url := _manifest_url_for_channel(channel)
+	var key_id := _key_id_for_channel(channel)
+	var public_key := _public_key_for_channel(channel)
 	if manifest_url.is_empty() or key_id.is_empty() or public_key.is_empty() or not manifest_url.begins_with("https://"):
-		return "config-incomplete"
+		return "preview-config-incomplete" if channel == PREVIEW_CHANNEL else "config-incomplete"
 	var updater := OS.get_environment("OCP_UPDATER_EXE")
 	if updater.is_empty() or not FileAccess.file_exists(updater):
 		return "updater-missing"
@@ -163,6 +187,7 @@ func safe_status() -> Dictionary:
 		next_check_seconds = maxi(0, int(ceil(float(_next_automatic_check_msec - Time.get_ticks_msec()) / 1000.0)))
 	return {
 		"currentVersion": _application_version(),
+		"channel": _selected_channel(),
 		"state": _last_state,
 		"targetVersion": _last_version,
 		"canCheck": can_check(),
@@ -170,11 +195,60 @@ func safe_status() -> Dictionary:
 		"checkAvailabilityCode": check_availability_code(),
 		"automaticChecksEnabled": _automatic_checks_enabled,
 		"nextAutomaticCheckSeconds": next_check_seconds,
+		"stableTrustReady": _stable_trust_ready(),
+		"installOnRestart": _install_on_restart and can_apply(),
 	}
 
 
 func _environment_flag_enabled(name: String) -> bool:
 	return OS.get_environment(name).strip_edges().to_lower() in ["1", "true", "yes", "on"]
+
+
+func _selected_channel() -> String:
+	var raw := STABLE_CHANNEL
+	if is_instance_valid(context):
+		var settings_value: Variant = context.get("settings")
+		if settings_value is Dictionary:
+			raw = str((settings_value as Dictionary).get("update_channel", STABLE_CHANNEL)).strip_edges().to_lower()
+	if raw in ["beta", "nightly"]:
+		return PREVIEW_CHANNEL
+	return raw if raw in [STABLE_CHANNEL, PREVIEW_CHANNEL] else STABLE_CHANNEL
+
+
+func _automatic_checks_allowed() -> bool:
+	if not _environment_flag_enabled(AUTOMATIC_CHECK_ENV):
+		return false
+	if is_instance_valid(context):
+		var settings_value: Variant = context.get("settings")
+		if settings_value is Dictionary and not bool((settings_value as Dictionary).get(USER_AUTOMATIC_CHECKS_SETTING, true)):
+			return false
+	return check_availability_code() == "ready"
+
+
+func _stable_trust_ready() -> bool:
+	return _environment_flag_enabled(STABLE_TRUST_READY_ENV)
+
+
+func _manifest_url_for_channel(channel: String) -> String:
+	if channel == PREVIEW_CHANNEL:
+		return OS.get_environment(PREVIEW_MANIFEST_ENV).strip_edges()
+	return OS.get_environment("OCP_UPDATE_MANIFEST_URL").strip_edges()
+
+
+func _key_id_for_channel(channel: String) -> String:
+	if channel == PREVIEW_CHANNEL:
+		var preview := OS.get_environment(PREVIEW_KEY_ID_ENV).strip_edges()
+		if not preview.is_empty():
+			return preview
+	return OS.get_environment("OCP_UPDATE_KEY_ID").strip_edges()
+
+
+func _public_key_for_channel(channel: String) -> String:
+	if channel == PREVIEW_CHANNEL:
+		var preview := OS.get_environment(PREVIEW_PUBLIC_KEY_ENV).strip_edges()
+		if not preview.is_empty():
+			return preview
+	return OS.get_environment("OCP_UPDATE_PUBLIC_KEY_B64").strip_edges()
 
 
 func _schedule_next_automatic_check(delay_seconds: float) -> void:
@@ -211,7 +285,31 @@ func can_apply() -> bool:
 		and FileAccess.file_exists(_staged_artifact_path)
 
 
-func request_apply() -> Dictionary:
+func request_install_on_restart(enabled: bool) -> Dictionary:
+	if enabled:
+		if not can_apply():
+			return _result(false, "No verified staged update is available", -1)
+		var marker_path := _install_on_restart_marker_path()
+		var marker_dir := marker_path.get_base_dir()
+		if not marker_dir.is_empty():
+			DirAccess.make_dir_recursive_absolute(marker_dir)
+		var file := FileAccess.open(marker_path, FileAccess.WRITE)
+		if file == null:
+			return _result(false, "Could not persist install-on-restart policy", -1)
+		file.store_string(JSON.stringify({"version": _staged_version}))
+		file.close()
+		_install_on_restart = true
+	else:
+		_clear_install_on_restart_marker()
+	if is_instance_valid(event_bus):
+		event_bus.publish(&"update.install_on_restart_changed", {
+			"enabled": _install_on_restart,
+			"version": _staged_version if _install_on_restart else "",
+		})
+	return _result(true, "Install-on-restart policy updated", -1)
+
+
+func request_apply(source: String = "updates-page") -> Dictionary:
 	if not can_apply():
 		return _result(false, "No verified staged update is available", -1)
 	var apply_script := OS.get_environment("OCP_UPDATE_APPLY_SCRIPT")
@@ -251,14 +349,52 @@ func request_apply() -> Dictionary:
 	var pid := OS.create_process("powershell.exe", args)
 	if pid <= 0:
 		return _result(false, "Could not start update apply helper", pid)
+	_clear_install_on_restart_marker()
 	_last_state = "apply_requested"
 	_last_version = _staged_version
 	event_bus.publish(&"update.apply_requested", {
 		"pid": pid,
 		"version": _staged_version,
-		"source": "updates-page",
+		"source": source,
 	})
 	return _result(true, "Update apply started; OCP will restart after verification", pid)
+
+
+func _on_window_exit_requested(_payload: Dictionary) -> void:
+	if not _install_on_restart or not can_apply() or _last_state == "apply_requested":
+		return
+	var result := request_apply("install-on-restart")
+	if not bool(result.get("ok", false)) and is_instance_valid(event_bus):
+		event_bus.publish(&"update.install_on_restart_failed", {
+			"version": _staged_version,
+		})
+
+
+func _install_on_restart_marker_path() -> String:
+	var staging_dir := OS.get_environment("OCP_UPDATE_STAGING_DIR")
+	if staging_dir.is_empty():
+		staging_dir = _staged_artifact_path.get_base_dir() if not _staged_artifact_path.is_empty() else "user://updates"
+	if staging_dir.begins_with("user://"):
+		staging_dir = ProjectSettings.globalize_path(staging_dir)
+	return staging_dir.path_join(INSTALL_ON_RESTART_MARKER_FILE)
+
+
+func _load_install_on_restart_marker(expected_version: String) -> bool:
+	var marker_path := _install_on_restart_marker_path()
+	if not FileAccess.file_exists(marker_path):
+		return false
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(marker_path))
+	if not parsed is Dictionary or str((parsed as Dictionary).get("version", "")) != expected_version:
+		DirAccess.remove_absolute(marker_path)
+		return false
+	return true
+
+
+func _clear_install_on_restart_marker() -> void:
+	_install_on_restart = false
+	var marker_path := _install_on_restart_marker_path()
+	if FileAccess.file_exists(marker_path):
+		DirAccess.remove_absolute(marker_path)
 
 
 func _result(ok: bool, message: String, pid: int) -> Dictionary:

@@ -9,7 +9,7 @@ class FakeContext:
 		"theme_preset": "solid", "font_family": "Inter", "text_scale": 1.15,
 		"bubble_style": "Rounded", "language": "en", "show_bubbles": true,
 		"click_through_enabled": true, "start_with_windows": false,
-		"offline_presence_enabled": true, "llm_companion_mode_enabled": false, "update_channel": "stable", "reduce_motion": false,
+		"offline_presence_enabled": true, "llm_companion_mode_enabled": false, "update_channel": "stable", "automatic_update_checks": true, "reduce_motion": false,
 	}
 	var runtime_config: Dictionary = {
 		"click_through_enabled": true,
@@ -323,7 +323,8 @@ func _run() -> void:
 			"startWithWindows": true,
 			"offlinePresenceEnabled": false,
 			"llmCompanionModeEnabled": true,
-			"updateChannel": "beta",
+			"updateChannel": "preview",
+			"automaticUpdateChecks": false,
 			"reduceMotion": true,
 		},
 	}, "settings-request-1")
@@ -337,7 +338,8 @@ func _run() -> void:
 		and bool(services.settings_service.saved.get("start_with_windows", false)) \
 		and not bool(services.settings_service.saved.get("offline_presence_enabled", true)) \
 		and bool(services.settings_service.saved.get("llm_companion_mode_enabled", false)) \
-		and services.settings_service.saved.get("update_channel", "") == "beta" \
+		and services.settings_service.saved.get("update_channel", "") == "preview" \
+		and not bool(services.settings_service.saved.get("automatic_update_checks", true)) \
 		and bool(services.settings_service.saved.get("reduce_motion", false)) \
 		and services.startup_registration_service.enabled \
 		and services.theme_service.selected == "liquid" \
@@ -346,7 +348,8 @@ func _run() -> void:
 	var resource_snapshot := adapter._resource_snapshot()
 	var projection_ok: bool = control_snapshot.get("fontFamily", "") == "Leelawadee UI" \
 		and control_snapshot.get("textScale", "") == "comfortable" \
-		and control_snapshot.get("updateChannel", "") == "beta" \
+		and control_snapshot.get("updateChannel", "") == "preview" \
+		and not bool(control_snapshot.get("automaticUpdateChecks", true)) \
 		and is_equal_approx(float(resource_snapshot.get("cpuPercent", 0.0)), 24.5) \
 		and is_equal_approx(float(resource_snapshot.get("memoryPercent", 0.0)), 61.0) \
 		and is_equal_approx(float(resource_snapshot.get("ocpMemoryMb", 0.0)), 642.5) \

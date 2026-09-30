@@ -417,7 +417,7 @@ describe("runtime bridge contract", () => {
     const controlSettings = {
       themePreset: "glass", fontFamily: "Segoe UI", textScale: "standard", bubbleStyle: "Soft",
       language: "en", showBubbles: true, clickThroughEnabled: true, startWithWindows: false,
-      offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", reduceMotion: false,
+      offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", automaticUpdateChecks: true, reduceMotion: false,
     } as const;
     const aiSettings = {
       providerId: "ollama", baseUrl: "http://127.0.0.1:11434", model: "qwen3.5:latest", timeoutSeconds: 45,
@@ -436,6 +436,8 @@ describe("runtime bridge contract", () => {
     expect(sanitizeRuntimeBridgeCommand({ type: "control.ai.update", settings: { ...aiSettings, apiKey: "secret" } })).toBeNull();
     expect(sanitizeRuntimeBridgeCommand({ type: "control.update.check" })).toEqual({ type: "control.update.check" });
     expect(sanitizeRuntimeBridgeCommand({ type: "control.update.apply" })).toEqual({ type: "control.update.apply" });
+    expect(sanitizeRuntimeBridgeCommand({ type: "control.update.install-on-restart", enabled: true })).toEqual({ type: "control.update.install-on-restart", enabled: true });
+    expect(sanitizeRuntimeBridgeCommand({ type: "control.update.install-on-restart", enabled: "yes" })).toBeNull();
     expect(sanitizeRuntimeBridgeCommand({ type: "control.update.check", url: "https://example.test/manifest.json" })).toBeNull();
     expect(sanitizeRuntimeBridgeCommand({ type: "control.update.apply", artifactPath: "C:\\private\\update.zip" })).toBeNull();
     expect(sanitizeRuntimeBridgeCommand({ type: "control.update.apply", confirmed: true })).toBeNull();
@@ -539,7 +541,7 @@ describe("runtime bridge contract", () => {
         settings: {
           themePreset: "liquid", fontFamily: "Inter", textScale: "standard", bubbleStyle: "Rounded",
           language: "en", showBubbles: true, clickThroughEnabled: true, startWithWindows: false,
-          offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", reduceMotion: false,
+          offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", automaticUpdateChecks: true, reduceMotion: false,
         },
         resources: { available: true, cpuPercent: 20, memoryPercent: 40, pressure: "normal", sampledAtMs: 1234 },
       },
@@ -558,7 +560,7 @@ describe("runtime bridge contract", () => {
 
   it("accepts playback-derived voice health only in the additive schema", () => {
     const controlCenter = {
-      settings: { themePreset: "solid", fontFamily: "Inter", textScale: "standard", bubbleStyle: "Rounded", language: "en", showBubbles: true, clickThroughEnabled: true, startWithWindows: false, offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", reduceMotion: false },
+      settings: { themePreset: "solid", fontFamily: "Inter", textScale: "standard", bubbleStyle: "Rounded", language: "en", showBubbles: true, clickThroughEnabled: true, startWithWindows: false, offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", automaticUpdateChecks: true, reduceMotion: false },
       resources: { available: false, cpuPercent: 0, memoryPercent: 0, pressure: "unavailable", sampledAtMs: 0 },
       ai: {
         settings: { providerId: "offline", baseUrl: "", model: "", timeoutSeconds: 45, ttsEnabled: true, chatVoiceMode: "on-demand", ttsProviderId: "auto", ttsModel: "gemini-2.5-flash-preview-tts", ttsVoice: "auto" },
@@ -566,7 +568,7 @@ describe("runtime bridge contract", () => {
         credentials: { brokerAvailable: false, openAiCompatiblePresent: false, geminiPresent: false },
         voiceTest: { status: "idle", errorCode: "" },
       },
-      updates: { currentVersion: "0.1.0", channel: "stable", state: "idle", messageCode: "update-idle", message: "Ready to check the signed update channel.", targetVersion: "", canCheck: false, canApply: false },
+      updates: { currentVersion: "0.1.0", channel: "stable", state: "idle", messageCode: "update-idle", message: "Ready to check the signed update channel.", targetVersion: "", canCheck: false, canApply: false, automaticChecksEnabled: false, nextAutomaticCheckSeconds: 0, stableTrustReady: false, installOnRestart: false },
     } as const;
     const phase = {
       ...snapshot,
@@ -583,10 +585,10 @@ describe("runtime bridge contract", () => {
 
   it("accepts only bounded schema-v8 conversation presentation state", () => {
     const controlCenter = {
-      settings: { themePreset: "solid", fontFamily: "Inter", textScale: "standard", bubbleStyle: "Rounded", language: "en", showBubbles: true, clickThroughEnabled: true, startWithWindows: false, offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", reduceMotion: false },
+      settings: { themePreset: "solid", fontFamily: "Inter", textScale: "standard", bubbleStyle: "Rounded", language: "en", showBubbles: true, clickThroughEnabled: true, startWithWindows: false, offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", automaticUpdateChecks: true, reduceMotion: false },
       resources: { available: false, cpuPercent: 0, memoryPercent: 0, pressure: "unavailable", sampledAtMs: 0 },
       ai: { settings: { providerId: "offline", baseUrl: "", model: "", timeoutSeconds: 45, ttsEnabled: true, chatVoiceMode: "on-demand", ttsProviderId: "auto", ttsModel: "gemini-2.5-flash-preview-tts", ttsVoice: "auto" }, provider: { providerId: "offline", available: true, configured: true, reachable: true, test: { status: "idle", errorCode: "" } }, credentials: { brokerAvailable: false, openAiCompatiblePresent: false, geminiPresent: false }, voiceTest: { status: "idle", errorCode: "" } },
-      updates: { currentVersion: "0.1.0", channel: "stable", state: "idle", messageCode: "update-idle", message: "Ready to check the signed update channel.", targetVersion: "", canCheck: false, canApply: false },
+      updates: { currentVersion: "0.1.0", channel: "stable", state: "idle", messageCode: "update-idle", message: "Ready to check the signed update channel.", targetVersion: "", canCheck: false, canApply: false, automaticChecksEnabled: false, nextAutomaticCheckSeconds: 0, stableTrustReady: false, installOnRestart: false },
     } as const;
     const realtime = { ...snapshot, schemaVersion: 8 as const, chat: { ...snapshot.chat, status: "thinking" as const, messages: [{ id: "a-1", role: "assistant" as const, text: "สวัสดี", status: "streaming" as const }], presentationState: "think" as const }, controlCenter, commandResults: [], voice: { status: "synthesizing" as const, reasonCode: "" as const, lastSuccessAtMs: 0, retryAtMs: 0 } };
     expect(sanitizeRuntimeSnapshot(realtime)).toEqual(realtime);
@@ -596,10 +598,10 @@ describe("runtime bridge contract", () => {
 
   it("accepts exact schema-v9 interaction metadata and schema-v10 atomic presentation", () => {
     const controlCenter = {
-      settings: { themePreset: "solid", fontFamily: "Inter", textScale: "standard", bubbleStyle: "Rounded", language: "en", showBubbles: true, clickThroughEnabled: true, startWithWindows: false, offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", reduceMotion: false },
+      settings: { themePreset: "solid", fontFamily: "Inter", textScale: "standard", bubbleStyle: "Rounded", language: "en", showBubbles: true, clickThroughEnabled: true, startWithWindows: false, offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", automaticUpdateChecks: true, reduceMotion: false },
       resources: { available: false, cpuPercent: 0, memoryPercent: 0, pressure: "unavailable", sampledAtMs: 0 },
       ai: { settings: { providerId: "offline", baseUrl: "", model: "", timeoutSeconds: 45, ttsEnabled: false, chatVoiceMode: "off", ttsProviderId: "auto", ttsModel: "gemini-2.5-flash-preview-tts", ttsVoice: "auto" }, provider: { providerId: "offline", available: true, configured: true, reachable: true, test: { status: "idle", errorCode: "" } }, credentials: { brokerAvailable: false, openAiCompatiblePresent: false, geminiPresent: false }, voiceTest: { status: "idle", errorCode: "" } },
-      updates: { currentVersion: "0.1.0", channel: "stable", state: "idle", messageCode: "update-idle", message: "Ready to check the signed update channel.", targetVersion: "", canCheck: false, canApply: false },
+      updates: { currentVersion: "0.1.0", channel: "stable", state: "idle", messageCode: "update-idle", message: "Ready to check the signed update channel.", targetVersion: "", canCheck: false, canApply: false, automaticChecksEnabled: false, nextAutomaticCheckSeconds: 0, stableTrustReady: false, installOnRestart: false },
     } as const;
     const next = { ...snapshot, schemaVersion: 9 as const, chat: { providerId: "ollama", status: "ready" as const, messages: [{ id: "a-1", role: "assistant" as const, text: "hello", status: "complete" as const, feedback: "positive" as const }], presentationState: "idle" as const, sessionId: "session_1", revision: 4, activeMessageId: "" }, controlCenter, commandResults: [], voice: { status: "healthy" as const, reasonCode: "" as const, lastSuccessAtMs: 10, retryAtMs: 0 } };
     expect(sanitizeRuntimeSnapshot(next)).toEqual(next);
@@ -771,7 +773,7 @@ describe("runtime bridge contract", () => {
         settings: {
           themePreset: "liquid", fontFamily: "Inter", textScale: "standard", bubbleStyle: "Rounded",
           language: "en", showBubbles: true, clickThroughEnabled: true, startWithWindows: false,
-          offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", reduceMotion: false,
+          offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", automaticUpdateChecks: true, reduceMotion: false,
         },
         resources: { available: true, cpuPercent: 20, memoryPercent: 40, pressure: "normal", sampledAtMs: 1234 },
         ai: {
@@ -796,7 +798,7 @@ describe("runtime bridge contract", () => {
       chat: { providerId: "offline", status: "ready", messages: [] },
       preview: { status: "idle", errorCode: "", packageId: "", version: "", clips: [], selectedAnimation: "", isPlaying: false, loop: false, speed: 1, framePngBase64: "", frameWidth: 0, frameHeight: 0 },
       controlCenter: {
-        settings: { themePreset: "solid", fontFamily: "Inter", textScale: "standard", bubbleStyle: "Rounded", language: "en", showBubbles: true, clickThroughEnabled: true, startWithWindows: false, offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", reduceMotion: false },
+        settings: { themePreset: "solid", fontFamily: "Inter", textScale: "standard", bubbleStyle: "Rounded", language: "en", showBubbles: true, clickThroughEnabled: true, startWithWindows: false, offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", automaticUpdateChecks: true, reduceMotion: false },
         resources: { available: false, cpuPercent: 0, memoryPercent: 0, pressure: "unavailable", sampledAtMs: 0 },
         ai: {
           settings: { providerId: "offline", baseUrl: "", model: "", timeoutSeconds: 45, ttsEnabled: false, chatVoiceMode: "off", ttsProviderId: "auto", ttsModel: "gemini-2.5-flash-preview-tts", ttsVoice: "auto" },
@@ -807,7 +809,7 @@ describe("runtime bridge contract", () => {
       },
       commandResults: [],
     } as const;
-    const updates = { currentVersion: "0.1.0", channel: "stable", state: "ready", messageCode: "update-ready", message: "A verified update is staged and ready to install.", targetVersion: "0.2.0", canCheck: true, canApply: true } as const;
+    const updates = { currentVersion: "0.1.0", channel: "stable", state: "ready", messageCode: "update-ready", message: "A verified update is staged and ready to install.", targetVersion: "0.2.0", canCheck: true, canApply: true, automaticChecksEnabled: true, nextAutomaticCheckSeconds: 3600, stableTrustReady: true, installOnRestart: false } as const;
     const phaseC = { ...phaseB, schemaVersion: 4 as const, controlCenter: { ...phaseB.controlCenter, updates } };
     expect(sanitizeRuntimeSnapshot(phaseC)).toEqual(phaseC);
     for (const extra of [

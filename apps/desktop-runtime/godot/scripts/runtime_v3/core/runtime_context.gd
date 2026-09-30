@@ -54,6 +54,8 @@ var settings: Dictionary = {
 	# First-install presentation is intentionally calm. Aura stays available in
 	# Character Effects, but the user must opt in before it renders on desktop.
 	"progression_aura_enabled": false,
+	"update_channel": "stable",
+	"automatic_update_checks": true,
 }
 var runtime_config: Dictionary = {
 	"debug_enabled": false,

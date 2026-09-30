@@ -13,7 +13,7 @@ const runtime: RuntimeSnapshot = {
   chat: { providerId: "ollama", status: "ready", messages: [] },
   preview: { status: "idle", errorCode: "", packageId: "", version: "", clips: [], selectedAnimation: "", isPlaying: false, loop: false, speed: 1, framePngBase64: "", frameWidth: 0, frameHeight: 0 },
   controlCenter: {
-    settings: { themePreset: "solid", fontFamily: "Inter", textScale: "standard", bubbleStyle: "Rounded", language: "en", showBubbles: true, clickThroughEnabled: true, startWithWindows: false, offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", reduceMotion: false },
+    settings: { themePreset: "solid", fontFamily: "Inter", textScale: "standard", bubbleStyle: "Rounded", language: "en", showBubbles: true, clickThroughEnabled: true, startWithWindows: false, offlinePresenceEnabled: true, llmCompanionModeEnabled: false, updateChannel: "stable", automaticUpdateChecks: true, reduceMotion: false },
     resources: { available: true, cpuPercent: 10, memoryPercent: 20, ocpMemoryMb: 642, runtimeMemoryMb: 284, desktopShellMemoryMb: 326, kernelMemoryMb: 18, nativeHostMemoryMb: 14, aiMemoryMb: 4820, pressure: "normal", sampledAtMs: 1 },
     ai: {
       settings: { providerId: "openai-compatible", baseUrl: "https://api.openai.com/v1", model: "gpt-test", timeoutSeconds: 45, ttsEnabled: true, chatVoiceMode: "on-demand", ttsProviderId: "auto", ttsModel: "gemini-2.5-flash-preview-tts", ttsVoice: "Zephyr", ttsVoiceMode: "custom", ttsVoiceGender: "female", ttsVoiceAge: "adult", thaiSpeechStyle: "feminine" },
@@ -21,7 +21,7 @@ const runtime: RuntimeSnapshot = {
       credentials: { brokerAvailable: true, openAiCompatiblePresent: true, geminiPresent: false },
       voiceTest: { status: "idle", errorCode: "" },
     },
-    updates: { currentVersion: "0.1.0", channel: "stable", state: "ready", messageCode: "update-ready", message: "A verified update is staged and ready to install.", targetVersion: "0.2.0", canCheck: true, canApply: true },
+    updates: { currentVersion: "0.1.0", channel: "stable", state: "ready", messageCode: "update-ready", message: "A verified update is staged and ready to install.", targetVersion: "0.2.0", canCheck: true, canApply: true, automaticChecksEnabled: true, nextAutomaticCheckSeconds: 3600, stableTrustReady: true, installOnRestart: false },
   },
   commandResults: [],
 };
@@ -50,6 +50,7 @@ describe("AI & Voice Control Center page", () => {
     expect(markup).toContain("Keep OCP current—safely");
     expect(markup).toContain("A verified update is staged and ready to install.");
     expect(markup).toContain("Install and restart OCP");
+    expect(markup).toContain("Install on next restart");
     expect(markup).not.toContain("releaseUrl");
     expect(markup).not.toContain("artifactPath");
   });

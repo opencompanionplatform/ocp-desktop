@@ -5,7 +5,7 @@ const AdapterScript = preload("res://scripts/runtime_v3/services/desktop_shell_f
 
 class FakeContext:
 	extends Node
-	var settings := {"update_channel": "beta"}
+	var settings := {"update_channel": "preview", "automatic_update_checks": true}
 	var runtime_config := {}
 
 
@@ -24,6 +24,8 @@ class FakeUpdate:
 	extends Node
 	var check_calls := 0
 	var apply_calls := 0
+	var restart_policy_calls := 0
+	var install_on_restart := false
 	var state := "idle"
 	var target_version := ""
 	var check_ready := true
@@ -39,12 +41,19 @@ class FakeUpdate:
 			return {"ok": false, "message": "No verified staged update is available", "pid": -1}
 		state = "apply_requested"
 		return {"ok": true, "message": "raw helper detail must not cross", "pid": 456}
+	func request_install_on_restart(enabled: bool) -> Dictionary:
+		restart_policy_calls += 1
+		if enabled and not apply_ready:
+			return {"ok": false, "message": "No verified staged update is available", "pid": -1}
+		install_on_restart = enabled
+		return {"ok": true, "message": "policy updated", "pid": -1}
 	func can_apply() -> bool:
 		return apply_ready
 	func safe_status() -> Dictionary:
 		return {
-			"currentVersion": "0.1.0", "state": state, "targetVersion": target_version,
+			"currentVersion": "0.1.0", "channel": "preview", "state": state, "targetVersion": target_version,
 			"canCheck": check_ready, "canApply": apply_ready, "checkAvailabilityCode": "ready",
+			"automaticChecksEnabled": true, "nextAutomaticCheckSeconds": 3600, "stableTrustReady": false, "installOnRestart": install_on_restart,
 		}
 
 
@@ -106,6 +115,20 @@ func _run() -> void:
 		and not serialized_projection.contains("signing") \
 		and not serialized_projection.contains("https://")
 
+	adapter._handle_command({"type": "control.update.install-on-restart", "enabled": true}, "restart-policy-1")
+	var restart_projection: Dictionary = adapter._update_control_snapshot()
+	var restart_policy_ok: bool = services.update_service.restart_policy_calls == 1 \
+		and services.update_service.install_on_restart \
+		and bool(restart_projection.get("installOnRestart", false)) \
+		and adapter.command_results.any(func(result: Dictionary) -> bool:
+			return result.get("id", "") == "restart-policy-1" and result.get("status", "") == "succeeded"
+	)
+	adapter._handle_command({"type": "control.update.install-on-restart", "enabled": true, "path": "C:\\private"}, "restart-policy-invalid")
+	var restart_policy_strict: bool = services.update_service.restart_policy_calls == 1 \
+		and adapter.command_results.any(func(result: Dictionary) -> bool:
+			return result.get("id", "") == "restart-policy-invalid" and result.get("status", "") == "failed"
+	)
+
 	services.update_service.apply_ready = false
 	adapter._handle_command({"type": "control.update.apply"}, "apply-not-ready")
 	var apply_revalidated: bool = services.update_service.apply_calls == 0 \
@@ -136,8 +159,8 @@ func _run() -> void:
 		and not bool(applying_projection.get("canApply", true)) \
 		and applying_projection.get("messageCode", "") == "update-apply-requested"
 
-	var ok: bool = strict_check and check_started and check_finished and redacted and apply_revalidated and apply_accepted and applying_safe
-	print("[G16.13C] strict=", strict_check, " check=", check_started and check_finished, " redacted=", redacted, " revalidate=", apply_revalidated, " apply=", apply_accepted, " projection=", applying_safe, " ok=", ok)
+	var ok: bool = strict_check and check_started and check_finished and redacted and restart_policy_ok and restart_policy_strict and apply_revalidated and apply_accepted and applying_safe
+	print("[G16.13C] strict=", strict_check, " check=", check_started and check_finished, " redacted=", redacted, " restart_policy=", restart_policy_ok and restart_policy_strict, " revalidate=", apply_revalidated, " apply=", apply_accepted, " projection=", applying_safe, " ok=", ok)
 	holder.queue_free()
 	await process_frame
 	quit(0 if ok else 1)

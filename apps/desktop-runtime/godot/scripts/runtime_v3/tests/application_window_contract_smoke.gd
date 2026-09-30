@@ -28,7 +28,7 @@ class FakeContext:
 	var settings: Dictionary = {
 		"show_bubbles": false,
 		"offline_presence_enabled": false,
-		"update_channel": "beta",
+		"update_channel": "preview",
 	}
 	var runtime_config: Dictionary = {
 		"native_presentation_enabled": true,
@@ -149,12 +149,12 @@ func _run() -> void:
 	show_bubbles.button_pressed = true
 	offline_presence.button_pressed = true
 	controller._on_offline_presence_toggled(true)
-	channels.select(2)
+	channels.select(1)
 	settings_ok = settings_ok and controller.save_settings()
 	settings_ok = settings_ok and fake_services.settings_service.saved == {
 		"show_bubbles": true,
 		"offline_presence_enabled": true,
-		"update_channel": "nightly",
+		"update_channel": "preview",
 	}
 	offline_presence.button_pressed = false
 	controller._on_offline_presence_toggled(false)

@@ -11,7 +11,7 @@ export const controlSelectableFontFamilies = ["Noto Sans Thai", "Segoe UI", "Lee
 export const controlTextScales = ["normal", "standard", "comfortable", "large", "extra"] as const;
 export const controlBubbleStyles = ["Rounded", "Compact", "Soft"] as const;
 export const controlLanguages = ["en", "th"] as const;
-export const controlUpdateChannels = ["stable", "beta", "nightly"] as const;
+export const controlUpdateChannels = ["stable", "preview"] as const;
 export const aiProviderIds = ["offline", "ollama", "openai-compatible"] as const;
 export const aiTimeoutSeconds = [15, 30, 45, 60, 120] as const;
 export const ttsProviderIds = ["auto", "system"] as const;
@@ -46,6 +46,8 @@ export const updateMessages = Object.freeze({
   "update-applied": "The update was applied and passed its startup health check.",
   "update-rolled-back": "The update failed and the previous version was restored.",
   "update-config-incomplete": "Signed update configuration is incomplete.",
+  "update-preview-config-incomplete": "Preview update configuration is incomplete.",
+  "update-stable-trust-pending": "Stable updates stay locked until Production signing trust is ready.",
   "update-updater-missing": "The signed Runtime updater is not installed.",
   "update-check-start-failed": "Runtime could not start the signed update check.",
   "update-check-failed": "The signed update check failed.",
@@ -90,6 +92,7 @@ export type ControlCenterSettings = Readonly<{
   offlinePresenceEnabled: boolean;
   llmCompanionModeEnabled: boolean;
   updateChannel: ControlUpdateChannel;
+  automaticUpdateChecks: boolean;
   reduceMotion: boolean;
 }>;
 
@@ -157,6 +160,10 @@ export type UpdateControlSnapshot = Readonly<{
   targetVersion: string;
   canCheck: boolean;
   canApply: boolean;
+  automaticChecksEnabled: boolean;
+  nextAutomaticCheckSeconds: number;
+  stableTrustReady: boolean;
+  installOnRestart: boolean;
 }>;
 
 export type ControlCenterSnapshot = Readonly<{
@@ -178,7 +185,7 @@ const SETTINGS_RESULT_COPY: Readonly<Record<string, string>> = Object.freeze({
 
 const SETTINGS_KEYS = new Set([
   "themePreset", "fontFamily", "textScale", "bubbleStyle", "language", "showBubbles",
-  "clickThroughEnabled", "startWithWindows", "offlinePresenceEnabled", "llmCompanionModeEnabled", "updateChannel", "reduceMotion",
+  "clickThroughEnabled", "startWithWindows", "offlinePresenceEnabled", "llmCompanionModeEnabled", "updateChannel", "automaticUpdateChecks", "reduceMotion",
 ]);
 const RESOURCE_KEYS = new Set([
   "available", "cpuPercent", "memoryPercent", "ocpMemoryMb", "runtimeMemoryMb",
@@ -197,7 +204,7 @@ const TEST_STATUS_KEYS = new Set(["status", "errorCode"]);
 const PROVIDER_STATUS_KEYS = new Set(["providerId", "available", "configured", "reachable", "test"]);
 const CREDENTIAL_STATUS_KEYS = new Set(["brokerAvailable", "openAiCompatiblePresent", "geminiPresent"]);
 const AI_CONTROL_KEYS = new Set(["settings", "provider", "credentials", "voiceTest"]);
-const UPDATE_CONTROL_KEYS = new Set(["currentVersion", "channel", "state", "messageCode", "message", "targetVersion", "canCheck", "canApply"]);
+const UPDATE_CONTROL_KEYS = new Set(["currentVersion", "channel", "state", "messageCode", "message", "targetVersion", "canCheck", "canApply", "automaticChecksEnabled", "nextAutomaticCheckSeconds", "stableTrustReady", "installOnRestart"]);
 const CONTROL_CENTER_V2_KEYS = new Set(["settings", "resources"]);
 const CONTROL_CENTER_V3_KEYS = new Set(["settings", "resources", "ai"]);
 const CONTROL_CENTER_V4_KEYS = new Set(["settings", "resources", "ai", "updates"]);
@@ -244,7 +251,7 @@ export function controlCenterSettingsSignature(settings: ControlCenterSettings |
   return [
     settings.themePreset, settings.fontFamily, settings.textScale, settings.bubbleStyle, settings.language,
     settings.showBubbles, settings.clickThroughEnabled, settings.startWithWindows,
-    settings.offlinePresenceEnabled, settings.llmCompanionModeEnabled, settings.updateChannel, settings.reduceMotion,
+    settings.offlinePresenceEnabled, settings.llmCompanionModeEnabled, settings.updateChannel, settings.automaticUpdateChecks, settings.reduceMotion,
   ].join("\u001f");
 }
 
@@ -261,7 +268,7 @@ export function sanitizeControlCenterSettings(value: unknown): ControlCenterSett
   if (!controlBubbleStyles.includes(value.bubbleStyle as ControlBubbleStyle)) return null;
   if (!controlLanguages.includes(value.language as ControlLanguage)) return null;
   if (!controlUpdateChannels.includes(value.updateChannel as ControlUpdateChannel)) return null;
-  for (const key of ["showBubbles", "clickThroughEnabled", "startWithWindows", "offlinePresenceEnabled", "llmCompanionModeEnabled", "reduceMotion"] as const) {
+  for (const key of ["showBubbles", "clickThroughEnabled", "startWithWindows", "offlinePresenceEnabled", "llmCompanionModeEnabled", "automaticUpdateChecks", "reduceMotion"] as const) {
     if (typeof value[key] !== "boolean") return null;
   }
   return value as ControlCenterSettings;
@@ -377,8 +384,10 @@ export function sanitizeUpdateControlSnapshot(value: unknown): UpdateControlSnap
   const messageCode = value.messageCode as UpdateMessageCode;
   if (value.message !== updateMessages[messageCode]) return null;
   if (typeof value.targetVersion !== "string" || (value.targetVersion !== "" && !VERSION_PATTERN.test(value.targetVersion))) return null;
-  if (typeof value.canCheck !== "boolean" || typeof value.canApply !== "boolean") return null;
+  if (typeof value.canCheck !== "boolean" || typeof value.canApply !== "boolean" || typeof value.automaticChecksEnabled !== "boolean" || typeof value.stableTrustReady !== "boolean" || typeof value.installOnRestart !== "boolean") return null;
+  if (typeof value.nextAutomaticCheckSeconds !== "number" || !Number.isSafeInteger(value.nextAutomaticCheckSeconds) || value.nextAutomaticCheckSeconds < 0) return null;
   if (value.canApply && (value.state !== "ready" || value.targetVersion === "")) return null;
+  if (value.installOnRestart && !value.canApply) return null;
   if (["ready", "apply-requested", "stopping", "validating", "swapping", "restarting"].includes(String(value.state)) && value.targetVersion === "") return null;
   return value as UpdateControlSnapshot;
 }

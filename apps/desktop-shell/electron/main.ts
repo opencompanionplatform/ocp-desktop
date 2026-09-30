@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, safeStorage, screen, session, shell, type Session, type WebContents } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, Notification, safeStorage, screen, session, shell, type Session, type WebContents } from "electron";
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import path from "node:path";
 
@@ -85,6 +85,7 @@ const initialRuntimeBridge = parseRuntimeBridgeLaunch(process.argv.slice(1));
 let runtimeBridgeClient = initialRuntimeBridge ? new FileRuntimeBridge(initialRuntimeBridge) : null;
 let runtimeNetworkTransferActive = false;
 let runtimeSnapshot: RuntimeSnapshot | null = null;
+let lastNotifiedUpdateVersion = "";
 let lastRuntimeAvailability: "connected" | "unavailable" | null = null;
 let runtimeConnectionObserved = false;
 let runtimeOwnerExitRequested = false;
@@ -1013,10 +1014,30 @@ function sendRuntimeSnapshotToWindow(record: ShellWindow): void {
   if (record.window.isDestroyed()) return;
   record.window.webContents.send("ocp:runtime-state", projectRuntimeSnapshotForView(runtimeSnapshot, viewUsesRuntimePreviewMedia(record.view)));
 }
+function notifyUpdateReady(previous: RuntimeSnapshot | null, next: RuntimeSnapshot | null): void {
+  const updates = next?.controlCenter?.updates;
+  if (!updates || updates.state !== "ready" || !updates.targetVersion) return;
+  const previousUpdates = previous?.controlCenter?.updates;
+  if (previousUpdates?.state === "ready" && previousUpdates.targetVersion === updates.targetVersion) return;
+  if (lastNotifiedUpdateVersion === updates.targetVersion || !Notification.isSupported()) return;
+  lastNotifiedUpdateVersion = updates.targetVersion;
+  const thai = appearance.locale === "th";
+  const notification = new Notification({
+    title: thai ? `OCP ${updates.targetVersion} พร้อมอัปเดต` : `OCP ${updates.targetVersion} is ready`,
+    body: updates.installOnRestart
+      ? (thai ? "อัปเดตที่ยืนยันแล้วจะติดตั้งเมื่อ OCP ปิดตามปกติครั้งถัดไป" : "The verified update will install on the next normal OCP exit.")
+      : (thai ? "ดาวน์โหลดและตรวจสอบแล้ว เลือกติดตั้งตอนนี้หรือเมื่อตอนรีสตาร์ตครั้งถัดไป" : "Downloaded and verified. Install now or on the next restart."),
+  });
+  notification.on("click", () => routeIntent({ view: "updates", source: "shell-navigation" }));
+  notification.show();
+}
+
 function refreshRuntimeSnapshot(): void {
   void serviceRuntimeNetworkTransfer();
+  const previousRuntimeSnapshot = runtimeSnapshot;
   const previousRuntimeState = runtimeSnapshot ? { connected: true, characterCount: runtimeSnapshot.characters.length } : null;
   runtimeSnapshot = runtimeBridgeClient?.readSnapshot() ?? null;
+  notifyUpdateReady(previousRuntimeSnapshot, runtimeSnapshot);
   runtimeConnectionObserved ||= runtimeSnapshot !== null;
   consecutiveRuntimeMisses = runtimeSnapshot ? 0 : consecutiveRuntimeMisses + 1;
   const nextRuntimeState = { connected: runtimeSnapshot !== null, characterCount: runtimeSnapshot?.characters.length ?? 0 };
