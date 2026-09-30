@@ -1,9 +1,0 @@
-# Silence the cosmetic LNK4099 "PDB 'ossl_static.pdb' was not found" warnings
-# from statically-vendored OpenSSL (bundled-sqlcipher-vendored-openssl, ADR-0012).
-# Missing third-party debug symbols only — the binary is identical. MSVC-only,
-# warning 4099 only; real link errors/warnings still surface.
-[target.aarch64-pc-windows-msvc]
-rustflags = ["-Clink-arg=/IGNORE:4099"]
-
-[target.x86_64-pc-windows-msvc]
-rustflags = ["-Clink-arg=/IGNORE:4099"]
