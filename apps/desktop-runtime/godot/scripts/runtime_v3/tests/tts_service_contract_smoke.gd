@@ -148,8 +148,39 @@ func _run() -> void:
 	var late_stream_ignored := not service._stream_playbacks.has("speech-late") \
 		and not service._stream_pending_chunks.has("speech-late") \
 		and not service._cancelled_speech_ids.has("speech-late")
-	var ok := prefetched and direct_bubbles and delivery_modes_ok and cancel_ok and late_stream_ignored
-	print("[TTS-SERVICE] prefetched=", prefetched, " finishes=", finishes, " delivery_modes=", delivery_modes_ok, " direct_bubbles=", direct_bubbles, " cancel=", cancel_ok, " late_stream_ignored=", late_stream_ignored, " ok=", ok)
+
+	# Voice latency telemetry is milestone-only and must never carry user text,
+	# audio bytes, or credentials. Completing the speech erases its retained
+	# timestamp record so long-running chat sessions cannot accumulate state.
+	var latency_key := service._tts_chunk_key("msg-latency", 3)
+	service._voice_latency_requests[latency_key] = {
+		"requested_ms": Time.get_ticks_msec() - 50,
+		"delivery_mode": "streaming",
+		"message_id": "msg-latency",
+		"chunk_index": 3,
+	}
+	service._voice_latency_register_speech("msg-latency", 3, "speech-latency", "streaming", "stream-start")
+	service._voice_latency_mark("speech-latency", "first-pcm")
+	service._voice_latency_mark("speech-latency", "audio-start")
+	service._voice_latency_mark("speech-latency", "finished")
+	var latency_events := _topic_payloads(&"tts.latency_measured")
+	var latency_payload: Dictionary = latency_events.back() if not latency_events.is_empty() else {}
+	var latency_ok := latency_events.size() == 4 \
+		and str(latency_payload.get("messageId", "")) == "msg-latency" \
+		and int(latency_payload.get("chunkIndex", -1)) == 3 \
+		and str(latency_payload.get("speechId", "")) == "speech-latency" \
+		and str(latency_payload.get("deliveryMode", "")) == "streaming" \
+		and str(latency_payload.get("milestone", "")) == "finished" \
+		and float(latency_payload.get("requestToStreamStartMs", 0.0)) >= 45.0 \
+		and float(latency_payload.get("requestToFirstPcmMs", 0.0)) >= 45.0 \
+		and float(latency_payload.get("requestToAudioStartMs", 0.0)) >= 45.0 \
+		and float(latency_payload.get("totalMs", 0.0)) >= 45.0 \
+		and not latency_payload.has("text") \
+		and not latency_payload.has("audio") \
+		and not latency_payload.has("credential") \
+		and not service._voice_latency_speech.has("speech-latency")
+	var ok := prefetched and direct_bubbles and delivery_modes_ok and cancel_ok and late_stream_ignored and latency_ok
+	print("[TTS-SERVICE] prefetched=", prefetched, " finishes=", finishes, " delivery_modes=", delivery_modes_ok, " direct_bubbles=", direct_bubbles, " cancel=", cancel_ok, " late_stream_ignored=", late_stream_ignored, " latency=", latency_ok, " ok=", ok)
 	service.stop()
 	holder.free()
 	quit(0 if ok else 1)
@@ -161,6 +192,14 @@ func _topic_count(topic: StringName) -> int:
 		if entry.get("topic") == topic:
 			count += 1
 	return count
+
+
+func _topic_payloads(topic: StringName) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for entry in events:
+		if entry.get("topic") == topic:
+			result.append((entry.get("payload", {}) as Dictionary).duplicate(true))
+	return result
 
 
 func _bubble_text_for(message_id: String) -> String:

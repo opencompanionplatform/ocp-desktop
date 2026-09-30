@@ -78,6 +78,15 @@ func _run() -> void:
 		"attachmentState": "attached",
 		"surfaceKind": "monitor-edge",
 	})
+	service._on_voice_latency_measured({
+		"deliveryMode": "streaming",
+		"milestone": "audio-start",
+		"requestToStreamStartMs": 82.0,
+		"requestToSynthesisReadyMs": 0.0,
+		"requestToFirstPcmMs": 104.0,
+		"requestToAudioStartMs": 218.0,
+		"totalMs": 0.0,
+	})
 	service._on_drag_edge_predicted({
 		"animation": "climb_ready_right",
 		"edge": "left",
@@ -108,6 +117,11 @@ func _run() -> void:
 		and bool(performance.get("animation_prefetch_ok", false)) \
 		and not bool(performance.get("animation_prefetch_resident", true)) \
 		and is_equal_approx(float(performance.get("animation_first_frame_ms", 0.0)), 24.0) \
+		and str(performance.get("voice_delivery_mode", "")) == "streaming" \
+		and str(performance.get("voice_latency_milestone", "")) == "audio-start" \
+		and is_equal_approx(float(performance.get("voice_stream_start_ms", 0.0)), 82.0) \
+		and is_equal_approx(float(performance.get("voice_first_pcm_ms", 0.0)), 104.0) \
+		and is_equal_approx(float(performance.get("voice_audio_start_ms", 0.0)), 218.0) \
 		and is_equal_approx(float(performance.get("drag_release_latency_ms", 0.0)), 11.5) \
 		and is_equal_approx(float(performance.get("drag_release_snap_distance_px", 0.0)), 52.0) \
 		and str(performance.get("drag_release_movement_state", "")) == "climb-ready" \

@@ -116,6 +116,24 @@ func _render_snapshot() -> void:
 			float(latest_snapshot.get("animation_first_frame_ms", 0.0)),
 		])
 
+	var voice_mode := str(latest_snapshot.get("voice_delivery_mode", ""))
+	if not voice_mode.is_empty():
+		if voice_mode == "streaming":
+			lines.append("Voice: streaming  start=%.0f ms  pcm=%.0f ms  audible=%.0f ms  total=%.0f ms  [%s]" % [
+				float(latest_snapshot.get("voice_stream_start_ms", 0.0)),
+				float(latest_snapshot.get("voice_first_pcm_ms", 0.0)),
+				float(latest_snapshot.get("voice_audio_start_ms", 0.0)),
+				float(latest_snapshot.get("voice_total_ms", 0.0)),
+				str(latest_snapshot.get("voice_latency_milestone", "")),
+			])
+		else:
+			lines.append("Voice: quality  ready=%.0f ms  audible=%.0f ms  total=%.0f ms  [%s]" % [
+				float(latest_snapshot.get("voice_synthesis_ready_ms", 0.0)),
+				float(latest_snapshot.get("voice_audio_start_ms", 0.0)),
+				float(latest_snapshot.get("voice_total_ms", 0.0)),
+				str(latest_snapshot.get("voice_latency_milestone", "")),
+			])
+
 	var edge_prediction := str(latest_snapshot.get("drag_edge_prediction_animation", ""))
 	if not edge_prediction.is_empty():
 		lines.append("Edge prefetch: %s  %.1f px  facing=%s  animation=%s" % [

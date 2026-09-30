@@ -27,6 +27,7 @@ var latest_animation_load: Dictionary = {}
 var latest_animation_prefetch: Dictionary = {}
 var latest_animation_first_frame: Dictionary = {}
 var latest_drag_release: Dictionary = {}
+var latest_voice_latency: Dictionary = {}
 var latest_drag_edge_prediction: Dictionary = {}
 var latest_anchor_continuity: Dictionary = {}
 var latest: Dictionary = {
@@ -57,6 +58,7 @@ func start() -> void:
 	event_bus.subscribe(&"character.animation_prefetched", Callable(self, "_on_animation_prefetched"))
 	event_bus.subscribe(&"animation.first_frame_measured", Callable(self, "_on_animation_first_frame_measured"))
 	event_bus.subscribe(&"character.drag_release_resolved", Callable(self, "_on_drag_release_resolved"))
+	event_bus.subscribe(&"tts.latency_measured", Callable(self, "_on_voice_latency_measured"))
 	event_bus.subscribe(&"character.drag_edge_predicted", Callable(self, "_on_drag_edge_predicted"))
 	event_bus.subscribe(&"character.anchor_continuity_measured", Callable(self, "_on_anchor_continuity_measured"))
 	event_bus.subscribe(&"character.presentation_applied", Callable(self, "_on_presentation_applied"))
@@ -70,6 +72,7 @@ func stop() -> void:
 	event_bus.unsubscribe(&"character.animation_prefetched", Callable(self, "_on_animation_prefetched"))
 	event_bus.unsubscribe(&"animation.first_frame_measured", Callable(self, "_on_animation_first_frame_measured"))
 	event_bus.unsubscribe(&"character.drag_release_resolved", Callable(self, "_on_drag_release_resolved"))
+	event_bus.unsubscribe(&"tts.latency_measured", Callable(self, "_on_voice_latency_measured"))
 	event_bus.unsubscribe(&"character.drag_edge_predicted", Callable(self, "_on_drag_edge_predicted"))
 	event_bus.unsubscribe(&"character.anchor_continuity_measured", Callable(self, "_on_anchor_continuity_measured"))
 	event_bus.unsubscribe(&"character.presentation_applied", Callable(self, "_on_presentation_applied"))
@@ -199,6 +202,13 @@ func _performance_snapshot() -> Dictionary:
 		"animation_prefetch_resident": bool(latest_animation_prefetch.get("alreadyResident", false)),
 		"animation_first_frame_name": str(latest_animation_first_frame.get("name", "")),
 		"animation_first_frame_ms": float(latest_animation_first_frame.get("firstFrameMs", 0.0)),
+		"voice_delivery_mode": str(latest_voice_latency.get("deliveryMode", "")),
+		"voice_latency_milestone": str(latest_voice_latency.get("milestone", "")),
+		"voice_stream_start_ms": float(latest_voice_latency.get("requestToStreamStartMs", 0.0)),
+		"voice_synthesis_ready_ms": float(latest_voice_latency.get("requestToSynthesisReadyMs", 0.0)),
+		"voice_first_pcm_ms": float(latest_voice_latency.get("requestToFirstPcmMs", 0.0)),
+		"voice_audio_start_ms": float(latest_voice_latency.get("requestToAudioStartMs", 0.0)),
+		"voice_total_ms": float(latest_voice_latency.get("totalMs", 0.0)),
 		"drag_release_latency_ms": float(latest_drag_release.get("latencyMs", 0.0)),
 		"drag_release_snap_distance_px": float(latest_drag_release.get("snapDistancePx", 0.0)),
 		"drag_release_movement_state": str(latest_drag_release.get("movementState", "")),
@@ -243,6 +253,10 @@ func _on_animation_first_frame_measured(payload: Dictionary) -> void:
 
 func _on_drag_release_resolved(payload: Dictionary) -> void:
 	latest_drag_release = payload.duplicate(true)
+
+
+func _on_voice_latency_measured(payload: Dictionary) -> void:
+	latest_voice_latency = payload.duplicate(true)
 
 
 func _on_drag_edge_predicted(payload: Dictionary) -> void:

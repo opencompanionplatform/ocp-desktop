@@ -54,6 +54,12 @@ var _route_reasons: Dictionary = {}
 # after local playback has already been interrupted.
 var _cancelled_chunks: Dictionary = {}
 var _cancelled_speech_ids: Dictionary = {}
+# Low-overhead Voice Realtime V2 latency telemetry. We retain only timestamps
+# and correlation ids; no prompt text, audio bytes, or provider credentials are
+# stored. One small record exists per in-flight/prefetched speech and is erased
+# on completion/cancellation.
+var _voice_latency_requests: Dictionary = {}
+var _voice_latency_speech: Dictionary = {}
 
 
 func start() -> void:
@@ -91,6 +97,8 @@ func stop() -> void:
 	_route_reasons.clear()
 	_cancelled_chunks.clear()
 	_cancelled_speech_ids.clear()
+	_voice_latency_requests.clear()
+	_voice_latency_speech.clear()
 	set_process(false)
 	_disconnect_bridge()
 	_queue.clear()
@@ -208,6 +216,7 @@ func _cleanup_speech_state(speech_id: String) -> void:
 	_stream_wav_finished.erase(speech_id + ":companion")
 	_stream_wav_finished.erase(speech_id + ":outcome")
 	_route_reasons.erase(speech_id)
+	_voice_latency_speech.erase(speech_id)
 
 
 func _advance_playback_after_cancel() -> void:
@@ -239,7 +248,9 @@ func _on_tts_cancel_requested(payload: Dictionary) -> void:
 
 	if not _inflight.is_empty() and _request_matches_cancel(_inflight, message_id, speech_id):
 		var cancelled := _inflight.duplicate(true)
-		_cancelled_chunks[_tts_chunk_key(str(cancelled.get("message_id", "")), int(cancelled.get("chunk_index", 0)))] = true
+		var cancelled_key := _tts_chunk_key(str(cancelled.get("message_id", "")), int(cancelled.get("chunk_index", 0)))
+		_cancelled_chunks[cancelled_key] = true
+		_voice_latency_requests.erase(cancelled_key)
 		_inflight.clear()
 		_publish_interrupted(cancelled, reason)
 
@@ -339,6 +350,76 @@ func _resolve_delivery_mode(request: Dictionary) -> String:
 	return "streaming"
 
 
+func _voice_latency_register_speech(message_id: String, chunk_index: int, speech_id: String, delivery_mode: String, milestone: String) -> void:
+	if speech_id.is_empty():
+		return
+	var key := _tts_chunk_key(message_id, chunk_index)
+	var request_value: Variant = _voice_latency_requests.get(key, {})
+	if not (request_value is Dictionary):
+		return
+	var record: Dictionary = (request_value as Dictionary).duplicate(true)
+	if record.is_empty():
+		return
+	_voice_latency_requests.erase(key)
+	record["speech_id"] = speech_id
+	record["delivery_mode"] = delivery_mode
+	var now := Time.get_ticks_msec()
+	if milestone == "stream-start":
+		record["stream_started_ms"] = now
+	else:
+		record["synthesis_ready_ms"] = now
+	_voice_latency_speech[speech_id] = record
+	_voice_latency_publish(speech_id, milestone)
+
+
+func _voice_latency_mark(speech_id: String, milestone: String) -> void:
+	var value: Variant = _voice_latency_speech.get(speech_id, {})
+	if not (value is Dictionary):
+		return
+	var record: Dictionary = value
+	var field := ""
+	match milestone:
+		"first-pcm": field = "first_pcm_ms"
+		"audio-start": field = "audio_started_ms"
+		"finished": field = "finished_ms"
+		"interrupted": field = "finished_ms"
+		_: return
+	if record.has(field):
+		return
+	record[field] = Time.get_ticks_msec()
+	_voice_latency_speech[speech_id] = record
+	_voice_latency_publish(speech_id, milestone)
+	if milestone in ["finished", "interrupted"]:
+		_voice_latency_speech.erase(speech_id)
+
+
+func _voice_latency_publish(speech_id: String, milestone: String) -> void:
+	if event_bus == null:
+		return
+	var value: Variant = _voice_latency_speech.get(speech_id, {})
+	if not (value is Dictionary):
+		return
+	var record: Dictionary = value
+	var requested_ms := int(record.get("requested_ms", 0))
+	if requested_ms <= 0:
+		return
+	var elapsed := func(field: String) -> float:
+		var tick := int(record.get(field, 0))
+		return float(maxi(0, tick - requested_ms)) if tick > 0 else 0.0
+	event_bus.publish(&"tts.latency_measured", {
+		"messageId": str(record.get("message_id", "")),
+		"chunkIndex": int(record.get("chunk_index", 0)),
+		"speechId": speech_id,
+		"deliveryMode": str(record.get("delivery_mode", "")),
+		"milestone": milestone,
+		"requestToStreamStartMs": elapsed.call("stream_started_ms"),
+		"requestToSynthesisReadyMs": elapsed.call("synthesis_ready_ms"),
+		"requestToFirstPcmMs": elapsed.call("first_pcm_ms"),
+		"requestToAudioStartMs": elapsed.call("audio_started_ms"),
+		"totalMs": elapsed.call("finished_ms"),
+	})
+
+
 func _pump() -> void:
 	# Keep one synthesis request in flight. As soon as it becomes a playable
 	# clip, `_on_bridge_speech_started` calls `_pump()` again, so generation of
@@ -351,6 +432,13 @@ func _pump() -> void:
 
 	_inflight = _queue.pop_front()
 	var delivery_mode := _resolve_delivery_mode(_inflight)
+	var latency_key := _tts_chunk_key(str(_inflight.get("message_id", "")), int(_inflight.get("chunk_index", 0)))
+	_voice_latency_requests[latency_key] = {
+		"requested_ms": Time.get_ticks_msec(),
+		"delivery_mode": delivery_mode,
+		"message_id": str(_inflight.get("message_id", "")),
+		"chunk_index": int(_inflight.get("chunk_index", 0)),
+	}
 	var request_method := "request_tts"
 	if delivery_mode == "streaming" and bridge.has_method("request_tts_streaming"):
 		request_method = "request_tts_streaming"
@@ -368,6 +456,7 @@ func _pump() -> void:
 	_inflight["bridge_method"] = request_method
 	if not accepted:
 		var failed := _inflight.duplicate(true)
+		_voice_latency_requests.erase(latency_key)
 		_inflight.clear()
 		event_bus.publish(&"tts.failed", {
 			"message_id": str(failed.get("message_id", "")),
@@ -396,6 +485,7 @@ func _on_bridge_speech_started_v2(companion_id: String, speech_id: String, messa
 		_cancelled_chunks.erase(cancel_key)
 		_cancelled_speech_ids[speech_id] = true
 		return
+	_voice_latency_register_speech(message_id, chunk_index, speech_id, "quality", "synthesis-ready")
 	if _inflight.is_empty():
 		return
 	if str(_inflight.get("message_id", "")) != message_id or int(_inflight.get("chunk_index", -1)) != chunk_index:
@@ -438,6 +528,7 @@ func _on_bridge_speech_stream_started_v2(companion_id: String, speech_id: String
 		_cancelled_chunks.erase(cancel_key)
 		_cancelled_speech_ids[speech_id] = true
 		return
+	_voice_latency_register_speech(message_id, chunk_index, speech_id, "streaming", "stream-start")
 	var request: Dictionary = {}
 	if not _inflight.is_empty() \
 		and str(_inflight.get("message_id", "")) == message_id \
@@ -566,6 +657,7 @@ func _start_stream_generator_playback(request: Dictionary) -> void:
 func _on_bridge_speech_audio_chunk(speech_id: String, audio: PackedByteArray) -> void:
 	if _cancelled_speech_ids.has(speech_id):
 		return
+	_voice_latency_mark(speech_id, "first-pcm")
 	# Continuous generator playback is primary. Keep recognizing the legacy WAV
 	# buffer as well so an older/fallback playback object can still consume its
 	# deltas. Retain chunks only before either backend has been initialized.
@@ -761,6 +853,7 @@ func _maybe_start_stream_audio(speech_id: String) -> void:
 		return
 	player.stream_paused = false
 	_stream_audio_started[speech_id] = true
+	_voice_latency_mark(speech_id, "audio-start")
 	var master_bus := AudioServer.get_bus_index("Master")
 	var master_muted := master_bus >= 0 and AudioServer.is_bus_mute(master_bus)
 	var master_db := AudioServer.get_bus_volume_db(master_bus) if master_bus >= 0 else 0.0
@@ -990,6 +1083,7 @@ func _start_playback(request: Dictionary) -> void:
 	_players[speech_id] = player
 	player.finished.connect(Callable(self, "_on_player_finished").bind(speech_id, companion_id))
 	player.play()
+	_voice_latency_mark(speech_id, "audio-start")
 	event_bus.publish(&"tts.started", {
 		"message_id": str(request.get("message_id", "")),
 		"chunk_index": int(request.get("chunk_index", 0)),
@@ -1027,6 +1121,7 @@ func _on_bridge_speech_finished(speech_id: String, companion_id: String, outcome
 		return
 	if _playback.is_empty() or speech_id != str(_playback.get("speech_id", "")):
 		return
+	_voice_latency_mark(speech_id, "finished")
 	var finished_request := _playback.duplicate(true)
 	var success := outcome == "finished"
 	if success:

@@ -80,6 +80,7 @@ const TTS_STARTED: StringName = &"tts.started"
 const TTS_FINISHED: StringName = &"tts.finished"
 const TTS_FAILED: StringName = &"tts.failed"
 const TTS_INTERRUPTED: StringName = &"tts.interrupted"
+const TTS_LATENCY_MEASURED: StringName = &"tts.latency_measured"
 
 const MEMORY_READ_REQUESTED: StringName = &"memory.read_requested"
 const MEMORY_WRITE_REQUESTED: StringName = &"memory.write_requested"
