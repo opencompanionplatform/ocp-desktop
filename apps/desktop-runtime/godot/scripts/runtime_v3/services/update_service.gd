@@ -143,6 +143,7 @@ func _request_check(source: String) -> Dictionary:
 	var args := [
 		"check",
 		"--manifest-url", manifest_url,
+		"--channel", channel,
 		"--current-version", current_version,
 		"--platform", platform,
 		"--arch", arch,

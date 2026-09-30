@@ -75,6 +75,18 @@ fn write_status(
     }
 }
 
+fn validate_expected_channel(manifest_channel: &str, expected_channel: &str) -> Result<(), String> {
+    if !matches!(expected_channel, "stable" | "preview") {
+        return Err("expected --channel stable or preview".to_owned());
+    }
+    if manifest_channel != expected_channel {
+        return Err(format!(
+            "update manifest channel mismatch: expected {expected_channel}, found {manifest_channel}"
+        ));
+    }
+    Ok(())
+}
+
 fn run() -> Result<(), String> {
     let raw: Vec<String> = env::args().skip(1).collect();
     let values = options(&raw)?;
@@ -94,6 +106,7 @@ fn run() -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     verify_manifest(&manifest, required(&values, "key-id")?, &key)
         .map_err(|error| error.to_string())?;
+    validate_expected_channel(&manifest.channel, required(&values, "channel")?)?;
     let artifact = match select_update(
         &manifest,
         required(&values, "current-version")?,
@@ -161,5 +174,20 @@ fn main() -> ExitCode {
             eprintln!("ocp-release-check: {error}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_expected_channel;
+
+    #[test]
+    fn update_channel_binding_is_exact_and_fail_closed() {
+        assert!(validate_expected_channel("stable", "stable").is_ok());
+        assert!(validate_expected_channel("preview", "preview").is_ok());
+        assert!(validate_expected_channel("stable", "preview").is_err());
+        assert!(validate_expected_channel("preview", "stable").is_err());
+        assert!(validate_expected_channel("beta", "preview").is_err());
+        assert!(validate_expected_channel("preview", "nightly").is_err());
     }
 }

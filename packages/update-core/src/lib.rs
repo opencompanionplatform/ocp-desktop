@@ -115,7 +115,10 @@ fn validate_unsigned(manifest: &UnsignedUpdateManifest) -> Result<(), UpdateErro
     if manifest.schema != "ocp-update/1" {
         return Err(UpdateError::InvalidSchema);
     }
-    if !matches!(manifest.channel.as_str(), "stable" | "beta" | "nightly") {
+    if !matches!(
+        manifest.channel.as_str(),
+        "stable" | "preview" | "beta" | "nightly"
+    ) {
         return Err(UpdateError::InvalidChannel);
     }
     Version::parse(&manifest.version).map_err(|_| UpdateError::InvalidVersion)?;

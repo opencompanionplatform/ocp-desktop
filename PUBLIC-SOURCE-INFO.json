@@ -2,7 +2,7 @@
     "schema":  "ocp-public-desktop-source/1",
     "sourceRepository":  "opencompanionplatform/ocp-platform",
     "publicRepository":  "opencompanionplatform/ocp-desktop",
-    "sourceCommit":  "760a7210d2dc4743f4ae3b77bcc7197b9b73f57c",
+    "sourceCommit":  "990d86ba1e475b0b3f1ba1ab214d780763d9c4f5",
     "exportPolicy":  "desktop-client-allowlist-v1",
     "includedRoots":  [
                           ".cargo",
@@ -45,7 +45,7 @@
                           "CODE_SIGNING.md",
                           "docs/public-desktop"
                       ],
-    "createdAt":  "2026-09-30T09:24:25Z",
+    "createdAt":  "2026-09-30T09:33:34Z",
     "fileCount":  1100,
-    "contentTreeSha256":  "305160fa3d33524d5acaa14181b0ebbc5e84ac301552316593401bbf6ce0d3bb"
+    "contentTreeSha256":  "a085e7948568f43fffec706fa1e30f28a6b933076fc97305dce02235f22abc79"
 }

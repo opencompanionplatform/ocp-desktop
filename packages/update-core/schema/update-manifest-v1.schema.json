@@ -7,7 +7,7 @@
   "required": ["schema", "channel", "version", "publishedAt", "artifacts", "signature"],
   "properties": {
     "schema": { "const": "ocp-update/1" },
-    "channel": { "enum": ["stable", "beta", "nightly"] },
+    "channel": { "enum": ["stable", "preview", "beta", "nightly"] },
     "version": { "type": "string", "minLength": 1, "maxLength": 64 },
     "publishedAt": { "type": "string", "minLength": 20, "maxLength": 40 },
     "releaseNotesUrl": { "type": "string", "minLength": 8, "maxLength": 2048 },
