@@ -8,7 +8,7 @@ OCP Desktop is an open-source desktop companion runtime with character packages,
 
 - Public Desktop source: https://github.com/opencompanionplatform/ocp-desktop
 - Official releases: https://github.com/opencompanionplatform/ocp-releases/releases
-- Production Store: https://ocp-store-dp4.pages.dev
+- Production Store: https://ocp-store-prd.pages.dev
 
 The hosted Store/Creator/Operations backend is operated separately and is not part of this public Desktop source repository.
 

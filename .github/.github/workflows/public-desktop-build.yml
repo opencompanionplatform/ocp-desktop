@@ -36,7 +36,7 @@ jobs:
         arch: ${{ fromJSON(github.event_name == 'push' && '["arm64","x86_64"]' || format('["{0}"]', inputs.arch)) }}
     env:
       TARGET_ARCH: ${{ matrix.arch }}
-      OCP_RELEASE_STORE_ORIGIN: https://ocp-store-dp4.pages.dev
+      OCP_RELEASE_STORE_ORIGIN: https://ocp-store-prd.pages.dev
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
