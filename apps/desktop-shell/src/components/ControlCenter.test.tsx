@@ -35,8 +35,11 @@ describe("AI & Voice Control Center page", () => {
     expect(markup).toContain("Test connection");
     expect(markup).toContain("Test voice");
     expect(markup).toContain("Gemini 2.5 Flash TTS — Economy");
+    expect(markup).toContain('value="live-voice">Live Voice · Gemini 3.8</option>');
+    expect(markup).not.toContain('disabled="" value="live-voice"');
     expect(markup).toContain("Effective custom profile: Female, Adult; Thai style: Feminine (ค่ะ/คะ).");
     expect(markup).not.toContain("implementation is scheduled for G16.13 Phase B");
+    expect(markup).not.toContain("Live Voice · coming next");
   });
 
   it("fails closed when the Phase B Runtime projection is unavailable", () => {

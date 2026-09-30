@@ -171,7 +171,7 @@ export function ChatView({ runtime, locale, storeAvailable = false }: ChatViewPr
               : chatVoiceMode === "auto-speak"
                 ? t("chat.voice_auto_speak_detail", "Completed replies are spoken automatically without delaying the text response.")
                 : chatVoiceMode === "live-voice"
-                  ? t("chat.voice_live_detail", "Live Voice is reserved for the realtime voice provider and is not enabled in this build yet.")
+                  ? t("chat.voice_live_detail", "Live Voice uses Gemini 3.8 Live for low-latency audio-to-audio conversation with barge-in.")
                   : t("chat.voice_on_demand_detail", "Use Read aloud on a reply. Chat will not delay text while preparing speech.");
   const send = useCallback(async (command: RuntimeBridgeCommand): Promise<void> => {
     await window.ocpShell.sendRuntimeCommand(command);
