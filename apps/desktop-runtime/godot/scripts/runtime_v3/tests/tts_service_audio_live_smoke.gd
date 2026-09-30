@@ -47,5 +47,7 @@ func _run() -> void:
 		and player.stream.get_length() > 0.0
 	print("[TTS-SERVICE-AUDIO-LIVE] playing=", player.playing if is_instance_valid(player) else false, " length=", player.stream.get_length() if is_instance_valid(player) and player.stream != null else 0.0, " ok=", ok)
 	service.stop()
-	holder.free()
+	holder.queue_free()
+	await process_frame
+	await process_frame
 	quit(0 if ok else 1)

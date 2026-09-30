@@ -1202,6 +1202,45 @@ impl OcpRuntimeBridge {
             .is_some_and(|sender| sender.send(env).is_ok())
     }
 
+    /// Request one low-latency streaming chat TTS chunk from the kernel voice
+    /// router. Kernel falls back to the normal whole-clip router when the
+    /// selected provider cannot stream or the streaming credential is absent.
+    #[allow(clippy::too_many_arguments)]
+    #[func]
+    fn request_tts_streaming(
+        &mut self,
+        message_id: GString,
+        chunk_index: i64,
+        text: GString,
+        voice: GString,
+        provider_id: GString,
+        model_id: GString,
+        final_chunk: bool,
+    ) -> bool {
+        let (clean, _) = sanitize_display_text(&text.to_string());
+        if clean.trim().is_empty() {
+            return false;
+        }
+        let data = serde_json::json!({
+            "schemaVersion": 1,
+            "messageId": message_id.to_string(),
+            "chunkIndex": chunk_index,
+            "text": clean,
+            "voice": voice.to_string(),
+            "providerId": provider_id.to_string(),
+            "modelId": model_id.to_string(),
+            "deliveryMode": "streaming",
+            "final": final_chunk,
+            "companionId": "default",
+        });
+        let Ok(env) = Envelope::new("ocp.runtime.tts-requested", "runtime", data) else {
+            return false;
+        };
+        self.outbox
+            .as_ref()
+            .is_some_and(|sender| sender.send(env).is_ok())
+    }
+
     /// Submit one non-streaming cloud chat turn to Kernel. Provider credentials
     /// stay in the OS keystore; Godot sends only display-safe prompt/config.
     // Godot ABI surface: explicit scalar parameters keep the script contract
@@ -1282,12 +1321,39 @@ impl OcpRuntimeBridge {
     #[signal]
     fn speech_started(companion_id: GString, speech_id: GString, text: GString);
 
+    /// Voice Realtime V2 correlation-preserving lifecycle. Legacy signals stay
+    /// available for older Runtime scripts, while V2 consumers receive the
+    /// originating Chat message/chunk identity directly instead of matching by
+    /// display text.
+    #[signal]
+    fn speech_started_v2(
+        companion_id: GString,
+        speech_id: GString,
+        message_id: GString,
+        chunk_index: i64,
+        final_chunk: bool,
+        text: GString,
+    );
+
     /// Gemini streaming lifecycle. Chunks are raw PCM encoded as base64 in the
     /// kernel envelope and decoded once at the Rust/Godot boundary.
     #[signal]
     fn speech_stream_started(
         companion_id: GString,
         speech_id: GString,
+        text: GString,
+        sample_rate: i64,
+        channels: i64,
+        sample_width: i64,
+    );
+
+    #[signal]
+    fn speech_stream_started_v2(
+        companion_id: GString,
+        speech_id: GString,
+        message_id: GString,
+        chunk_index: i64,
+        final_chunk: bool,
         text: GString,
         sample_rate: i64,
         channels: i64,
@@ -2049,6 +2115,21 @@ impl OcpRuntimeBridge {
                     .get("streaming")
                     .and_then(serde_json::Value::as_bool)
                     .unwrap_or(false);
+                let message_id = env
+                    .data
+                    .get("messageId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let chunk_index = env
+                    .data
+                    .get("chunkIndex")
+                    .and_then(serde_json::Value::as_i64)
+                    .unwrap_or(0);
+                let final_chunk = env
+                    .data
+                    .get("final")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
                 self.pending_speech.insert(req.speech_id, env.id);
                 if streaming {
                     self.base_mut().emit_signal(
@@ -2056,6 +2137,20 @@ impl OcpRuntimeBridge {
                         &[
                             req.companion_id.to_variant(),
                             req.speech_id.to_string().to_variant(),
+                            text.to_variant(),
+                            24_000_i64.to_variant(),
+                            1_i64.to_variant(),
+                            2_i64.to_variant(),
+                        ],
+                    );
+                    self.base_mut().emit_signal(
+                        "speech_stream_started_v2",
+                        &[
+                            req.companion_id.to_variant(),
+                            req.speech_id.to_string().to_variant(),
+                            message_id.to_variant(),
+                            chunk_index.to_variant(),
+                            final_chunk.to_variant(),
                             text.to_variant(),
                             24_000_i64.to_variant(),
                             1_i64.to_variant(),
@@ -2073,6 +2168,17 @@ impl OcpRuntimeBridge {
                         &[
                             req.companion_id.to_variant(),
                             req.speech_id.to_string().to_variant(),
+                            text.to_variant(),
+                        ],
+                    );
+                    self.base_mut().emit_signal(
+                        "speech_started_v2",
+                        &[
+                            req.companion_id.to_variant(),
+                            req.speech_id.to_string().to_variant(),
+                            message_id.to_variant(),
+                            chunk_index.to_variant(),
+                            final_chunk.to_variant(),
                             text.to_variant(),
                         ],
                     );

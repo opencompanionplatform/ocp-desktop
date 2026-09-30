@@ -49,15 +49,22 @@ var _stream_wav_buffers: Dictionary = {}
 var _stream_wav_queue: Dictionary = {}
 var _stream_wav_finished: Dictionary = {}
 var _route_reasons: Dictionary = {}
+# Voice Realtime V2 interruption guards. Message/chunk keys cover synthesis that
+# was cancelled before a speech id existed; speech ids cover late PCM/completion
+# after local playback has already been interrupted.
+var _cancelled_chunks: Dictionary = {}
+var _cancelled_speech_ids: Dictionary = {}
 
 
 func start() -> void:
 	event_bus.subscribe(&"tts.requested", Callable(self, "_on_tts_requested"))
+	event_bus.subscribe(&"tts.cancel_requested", Callable(self, "_on_tts_cancel_requested"))
 	set_process(true)
 
 
 func stop() -> void:
 	event_bus.unsubscribe(&"tts.requested", Callable(self, "_on_tts_requested"))
+	event_bus.unsubscribe(&"tts.cancel_requested", Callable(self, "_on_tts_cancel_requested"))
 	# Drop generator playback references before detaching their streams. This is
 	# important on WASAPI/Dummy alike: an AudioStreamGeneratorPlayback can remain
 	# referenced by the player until `stream` is explicitly cleared.
@@ -82,6 +89,8 @@ func stop() -> void:
 	_stream_wav_queue.clear()
 	_stream_wav_finished.clear()
 	_route_reasons.clear()
+	_cancelled_chunks.clear()
+	_cancelled_speech_ids.clear()
 	set_process(false)
 	_disconnect_bridge()
 	_queue.clear()
@@ -97,9 +106,13 @@ func bind_bridge(target: Node) -> void:
 	bridge = target
 	if not is_instance_valid(bridge):
 		return
-	if bridge.has_signal("speech_started"):
+	if bridge.has_signal("speech_started_v2"):
+		bridge.connect("speech_started_v2", Callable(self, "_on_bridge_speech_started_v2"))
+	elif bridge.has_signal("speech_started"):
 		bridge.connect("speech_started", Callable(self, "_on_bridge_speech_started"))
-	if bridge.has_signal("speech_stream_started"):
+	if bridge.has_signal("speech_stream_started_v2"):
+		bridge.connect("speech_stream_started_v2", Callable(self, "_on_bridge_speech_stream_started_v2"))
+	elif bridge.has_signal("speech_stream_started"):
 		bridge.connect("speech_stream_started", Callable(self, "_on_bridge_speech_stream_started"))
 	if bridge.has_signal("speech_audio_chunk"):
 		bridge.connect("speech_audio_chunk", Callable(self, "_on_bridge_speech_audio_chunk"))
@@ -118,8 +131,12 @@ func _disconnect_bridge() -> void:
 	if not is_instance_valid(bridge):
 		bridge = null
 		return
+	if bridge.has_signal("speech_started_v2") and bridge.is_connected("speech_started_v2", Callable(self, "_on_bridge_speech_started_v2")):
+		bridge.disconnect("speech_started_v2", Callable(self, "_on_bridge_speech_started_v2"))
 	if bridge.has_signal("speech_started") and bridge.is_connected("speech_started", Callable(self, "_on_bridge_speech_started")):
 		bridge.disconnect("speech_started", Callable(self, "_on_bridge_speech_started"))
+	if bridge.has_signal("speech_stream_started_v2") and bridge.is_connected("speech_stream_started_v2", Callable(self, "_on_bridge_speech_stream_started_v2")):
+		bridge.disconnect("speech_stream_started_v2", Callable(self, "_on_bridge_speech_stream_started_v2"))
 	if bridge.has_signal("speech_stream_started") and bridge.is_connected("speech_stream_started", Callable(self, "_on_bridge_speech_stream_started")):
 		bridge.disconnect("speech_stream_started", Callable(self, "_on_bridge_speech_stream_started"))
 	if bridge.has_signal("speech_audio_chunk") and bridge.is_connected("speech_audio_chunk", Callable(self, "_on_bridge_speech_audio_chunk")):
@@ -143,6 +160,111 @@ func _on_tts_requested(payload: Dictionary) -> void:
 	request["text"] = text
 	_publish_direct_tts_bubble(request)
 	_queue.append(request)
+	_pump()
+
+
+func _tts_chunk_key(message_id: String, chunk_index: int) -> String:
+	return "%s:%d" % [message_id, chunk_index]
+
+
+func _request_matches_cancel(request: Dictionary, message_id: String, speech_id: String) -> bool:
+	if not speech_id.is_empty() and str(request.get("speech_id", "")) == speech_id:
+		return true
+	return not message_id.is_empty() and str(request.get("message_id", "")) == message_id
+
+
+func _publish_interrupted(request: Dictionary, reason: String) -> void:
+	event_bus.publish(&"tts.interrupted", {
+		"message_id": str(request.get("message_id", "")),
+		"chunk_index": int(request.get("chunk_index", 0)),
+		"final": bool(request.get("final", false)),
+		"speech_id": str(request.get("speech_id", "")),
+		"companion_id": str(request.get("companion_id", "default")),
+		"outcome": "interrupted",
+		"reason": reason,
+	})
+
+
+func _cleanup_speech_state(speech_id: String) -> void:
+	if speech_id.is_empty():
+		return
+	var player := _players.get(speech_id) as AudioStreamPlayer
+	_players.erase(speech_id)
+	if is_instance_valid(player):
+		player.stop()
+		player.stream = null
+		player.queue_free()
+	_stream_playbacks.erase(speech_id)
+	_stream_pcm_bytes.erase(speech_id)
+	_stream_sample_rates.erase(speech_id)
+	_stream_pending_finish.erase(speech_id)
+	_stream_pending_chunks.erase(speech_id)
+	_stream_audio_started.erase(speech_id)
+	_stream_audio_chunks.erase(speech_id)
+	_stream_audio_peak.erase(speech_id)
+	_stream_wav_buffers.erase(speech_id)
+	_stream_wav_queue.erase(speech_id)
+	_stream_wav_finished.erase(speech_id)
+	_stream_wav_finished.erase(speech_id + ":companion")
+	_stream_wav_finished.erase(speech_id + ":outcome")
+	_route_reasons.erase(speech_id)
+
+
+func _advance_playback_after_cancel() -> void:
+	if not _playback.is_empty() or _ready.is_empty():
+		return
+	_playback = _ready.pop_front()
+	if bool(_playback.get("streaming", false)):
+		_start_stream_playback(_playback)
+	elif not str(_playback.get("audio_path", "")).is_empty():
+		_start_playback(_playback)
+
+
+func _on_tts_cancel_requested(payload: Dictionary) -> void:
+	var message_id := str(payload.get("message_id", "")).strip_edges()
+	var speech_id := str(payload.get("speech_id", "")).strip_edges()
+	if message_id.is_empty() and speech_id.is_empty():
+		return
+	var reason := str(payload.get("reason", "user-interrupt")).strip_edges()
+	if reason.is_empty():
+		reason = "user-interrupt"
+
+	var kept_queue: Array[Dictionary] = []
+	for request in _queue:
+		if _request_matches_cancel(request, message_id, speech_id):
+			_publish_interrupted(request, reason)
+		else:
+			kept_queue.append(request)
+	_queue = kept_queue
+
+	if not _inflight.is_empty() and _request_matches_cancel(_inflight, message_id, speech_id):
+		var cancelled := _inflight.duplicate(true)
+		_cancelled_chunks[_tts_chunk_key(str(cancelled.get("message_id", "")), int(cancelled.get("chunk_index", 0)))] = true
+		_inflight.clear()
+		_publish_interrupted(cancelled, reason)
+
+	var kept_ready: Array[Dictionary] = []
+	for request in _ready:
+		if _request_matches_cancel(request, message_id, speech_id):
+			var ready_speech_id := str(request.get("speech_id", ""))
+			if not ready_speech_id.is_empty():
+				_cancelled_speech_ids[ready_speech_id] = true
+				_cleanup_speech_state(ready_speech_id)
+			_publish_interrupted(request, reason)
+		else:
+			kept_ready.append(request)
+	_ready = kept_ready
+
+	if not _playback.is_empty() and _request_matches_cancel(_playback, message_id, speech_id):
+		var active := _playback.duplicate(true)
+		var active_speech_id := str(active.get("speech_id", ""))
+		if not active_speech_id.is_empty():
+			_cancelled_speech_ids[active_speech_id] = true
+			_cleanup_speech_state(active_speech_id)
+		_playback.clear()
+		_publish_interrupted(active, reason)
+		_advance_playback_after_cancel()
+
 	_pump()
 
 
@@ -202,6 +324,21 @@ func _profile_token(profile: Dictionary) -> String:
 	return "profile:%s:%s" % [gender, age]
 
 
+func _resolve_delivery_mode(request: Dictionary) -> String:
+	var requested := str(request.get("delivery_mode", "")).strip_edges().to_lower()
+	if requested in ["quality", "whole", "whole-clip", "wav"]:
+		return "quality"
+	if requested in ["streaming", "realtime", "low-latency"]:
+		return "streaming"
+	if is_instance_valid(context):
+		var configured := str(context.settings.get("tts_delivery_mode", "streaming")).strip_edges().to_lower()
+		if configured in ["quality", "whole", "whole-clip", "wav"]:
+			return "quality"
+	# Voice Realtime V2 defaults to stream-first. The bridge/kernel still falls
+	# back to the existing whole-clip router when streaming cannot start.
+	return "streaming"
+
+
 func _pump() -> void:
 	# Keep one synthesis request in flight. As soon as it becomes a playable
 	# clip, `_on_bridge_speech_started` calls `_pump()` again, so generation of
@@ -213,8 +350,12 @@ func _pump() -> void:
 		return
 
 	_inflight = _queue.pop_front()
+	var delivery_mode := _resolve_delivery_mode(_inflight)
+	var request_method := "request_tts"
+	if delivery_mode == "streaming" and bridge.has_method("request_tts_streaming"):
+		request_method = "request_tts_streaming"
 	var accepted := bool(bridge.call(
-		"request_tts",
+		request_method,
 		str(_inflight.get("message_id", "")),
 		int(_inflight.get("chunk_index", 0)),
 		str(_inflight.get("text", "")),
@@ -223,6 +364,8 @@ func _pump() -> void:
 		str(_inflight.get("model_id", context.settings.get("tts_model", "gemini-3.1-flash-tts-preview") if is_instance_valid(context) else "gemini-3.1-flash-tts-preview")),
 		bool(_inflight.get("final", false))
 	))
+	_inflight["delivery_mode"] = delivery_mode
+	_inflight["bridge_method"] = request_method
 	if not accepted:
 		var failed := _inflight.duplicate(true)
 		_inflight.clear()
@@ -247,45 +390,84 @@ func _fail_next(error_text: String) -> void:
 	})
 
 
+func _on_bridge_speech_started_v2(companion_id: String, speech_id: String, message_id: String, chunk_index: int, final_chunk: bool, text: String) -> void:
+	var cancel_key := _tts_chunk_key(message_id, chunk_index)
+	if _cancelled_chunks.has(cancel_key):
+		_cancelled_chunks.erase(cancel_key)
+		_cancelled_speech_ids[speech_id] = true
+		return
+	if _inflight.is_empty():
+		return
+	if str(_inflight.get("message_id", "")) != message_id or int(_inflight.get("chunk_index", -1)) != chunk_index:
+		return
+	var request := _inflight.duplicate(true)
+	_inflight.clear()
+	request["final"] = final_chunk
+	_accept_whole_speech_started(request, companion_id, speech_id, text)
+
+
 func _on_bridge_speech_started(companion_id: String, speech_id: String, text: String) -> void:
 	if _inflight.is_empty():
 		return
-	# Kernel speech can also be triggered by behavior or the developer /speech
-	# command. Match the serialized in-flight Chat chunk so independent speech
-	# cannot enter Chat's SPEAK/IDLE lifecycle.
+	# Legacy bridge correlation matched by display-safe text. Voice Realtime V2
+	# uses speech_started_v2 above and retains this only for older bridge builds.
 	if text.strip_edges() != str(_inflight.get("text", "")).strip_edges():
 		return
 	var request := _inflight.duplicate(true)
 	_inflight.clear()
+	_accept_whole_speech_started(request, companion_id, speech_id, text)
+
+
+func _accept_whole_speech_started(request: Dictionary, companion_id: String, speech_id: String, text: String) -> void:
 	request["speech_id"] = speech_id
 	request["companion_id"] = companion_id
 	request["text"] = text
 	request["audio_path"] = ""
-
 	if _playback.is_empty():
 		_playback = request
 	else:
 		_ready.append(request)
-
 	# The current chunk has finished synthesis. Start synthesizing the next chunk
 	# immediately; playback remains strictly serialized by `_playback`.
 	_pump()
 
 
+func _on_bridge_speech_stream_started_v2(companion_id: String, speech_id: String, message_id: String, chunk_index: int, final_chunk: bool, text: String, sample_rate: int, channels: int, sample_width: int) -> void:
+	var cancel_key := _tts_chunk_key(message_id, chunk_index)
+	if _cancelled_chunks.has(cancel_key):
+		_cancelled_chunks.erase(cancel_key)
+		_cancelled_speech_ids[speech_id] = true
+		return
+	var request: Dictionary = {}
+	if not _inflight.is_empty() \
+		and str(_inflight.get("message_id", "")) == message_id \
+		and int(_inflight.get("chunk_index", -1)) == chunk_index:
+		request = _inflight.duplicate(true)
+		_inflight.clear()
+		request["final"] = final_chunk
+		_pump()
+	elif not _playback.is_empty() and str(_playback.get("speech_id", "")) == speech_id:
+		request = _playback.duplicate(true)
+	else:
+		return
+	_accept_stream_speech_started(request, companion_id, speech_id, text, sample_rate, channels, sample_width)
+
+
 func _on_bridge_speech_stream_started(companion_id: String, speech_id: String, text: String, sample_rate: int, channels: int, sample_width: int) -> void:
-	# Streaming requests do not emit the legacy `speech_started` signal because
-	# there is no completed WAV yet. Promote the in-flight Chat chunk here and
-	# start a real-time AudioStreamGenerator immediately.
+	# Legacy bridge fallback: correlate by text only. V2 uses message/chunk ids.
 	var request: Dictionary = {}
 	if not _inflight.is_empty() and text.strip_edges() == str(_inflight.get("text", "")).strip_edges():
 		request = _inflight.duplicate(true)
 		_inflight.clear()
 		_pump()
+	elif not _playback.is_empty() and str(_playback.get("speech_id", "")) == speech_id:
+		request = _playback.duplicate(true)
 	else:
-		if not _playback.is_empty() and str(_playback.get("speech_id", "")) == speech_id:
-			request = _playback.duplicate(true)
-		else:
-			return
+		return
+	_accept_stream_speech_started(request, companion_id, speech_id, text, sample_rate, channels, sample_width)
+
+
+func _accept_stream_speech_started(request: Dictionary, companion_id: String, speech_id: String, text: String, sample_rate: int, channels: int, sample_width: int) -> void:
 	request["speech_id"] = speech_id
 	request["companion_id"] = companion_id
 	request["text"] = text
@@ -382,6 +564,8 @@ func _start_stream_generator_playback(request: Dictionary) -> void:
 
 
 func _on_bridge_speech_audio_chunk(speech_id: String, audio: PackedByteArray) -> void:
+	if _cancelled_speech_ids.has(speech_id):
+		return
 	# Continuous generator playback is primary. Keep recognizing the legacy WAV
 	# buffer as well so an older/fallback playback object can still consume its
 	# deltas. Retain chunks only before either backend has been initialized.
@@ -591,6 +775,10 @@ func _flush_stream_pending_chunks(speech_id: String) -> void:
 
 
 func _on_bridge_speech_stream_finished(speech_id: String, companion_id: String, outcome: String) -> void:
+	if _cancelled_speech_ids.has(speech_id):
+		_cleanup_speech_state(speech_id)
+		_cancelled_speech_ids.erase(speech_id)
+		return
 	if _stream_wav_buffers.has(speech_id):
 		var tail: PackedByteArray = _stream_wav_buffers.get(speech_id, PackedByteArray())
 		if not tail.is_empty():
@@ -692,6 +880,8 @@ func _process(_delta: float) -> void:
 
 
 func _on_bridge_speech_requested(companion_id: String, speech_id: String, text: String, subtitle: bool, audio_path: String) -> void:
+	if _cancelled_speech_ids.has(speech_id):
+		return
 	# `speech_started` arrives before `speech_requested`; attach the resulting
 	# file to either the currently playable chunk or the prefetched ready queue.
 	var target: Dictionary = {}
@@ -831,6 +1021,10 @@ func _report_speech_finished(speech_id: String, companion_id: String, outcome: S
 
 
 func _on_bridge_speech_finished(speech_id: String, companion_id: String, outcome: String) -> void:
+	if _cancelled_speech_ids.has(speech_id):
+		_cleanup_speech_state(speech_id)
+		_cancelled_speech_ids.erase(speech_id)
+		return
 	if _playback.is_empty() or speech_id != str(_playback.get("speech_id", "")):
 		return
 	var finished_request := _playback.duplicate(true)

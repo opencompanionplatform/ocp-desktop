@@ -32,6 +32,7 @@ func start() -> void:
 	event_bus.subscribe(&"tts.started", Callable(self, "_on_tts_started"))
 	event_bus.subscribe(&"tts.finished", Callable(self, "_on_tts_finished"))
 	event_bus.subscribe(&"tts.failed", Callable(self, "_on_tts_failed"))
+	event_bus.subscribe(&"tts.interrupted", Callable(self, "_on_tts_interrupted"))
 
 
 func stop() -> void:
@@ -43,6 +44,7 @@ func stop() -> void:
 	event_bus.unsubscribe(&"tts.started", Callable(self, "_on_tts_started"))
 	event_bus.unsubscribe(&"tts.finished", Callable(self, "_on_tts_finished"))
 	event_bus.unsubscribe(&"tts.failed", Callable(self, "_on_tts_failed"))
+	event_bus.unsubscribe(&"tts.interrupted", Callable(self, "_on_tts_interrupted"))
 	_stream_text_by_message.clear()
 	_bubble_chunkers.clear()
 	_tts_chunkers.clear()
@@ -367,21 +369,21 @@ func _on_tts_failed(payload: Dictionary) -> void:
 	_complete_tts_chunk(payload)
 
 
+func _on_tts_interrupted(payload: Dictionary) -> void:
+	_complete_tts_chunk(payload)
+
+
 func _complete_tts_chunk(payload: Dictionary) -> void:
 	var message_id := str(payload.get("message_id", ""))
 	if not _owns_tts_message(message_id):
 		return
 	var pending := maxi(0, int(_tts_pending_chunks.get(message_id, 0)) - 1)
 	_tts_pending_chunks[message_id] = pending
-	if pending == 0 and not bool(_tts_response_complete.get(message_id, false)):
-		# No prefetched WAV remains yet. Return to THINK while the LLM continues,
-		# and release the SPEAK latch so a later stable segment can re-enter SPEAK.
-		_tts_speaking_latched[message_id] = false
-		event_bus.publish(&"animation.requested", {
-			"name": "think",
-			"message_id": message_id,
-			"source": "chat-session-stable",
-		})
+	# Voice Realtime V2 treats all stable TTS chunks for one assistant response
+	# as one utterance. Once SPEAK begins it stays latched across provider/token
+	# gaps and prefetched chunk boundaries; only final response completion may
+	# transition back to IDLE. This removes visible SPEAK->THINK oscillation and
+	# keeps lipsync/animation ownership aligned with the logical utterance.
 	_finish_tts_message_if_ready(message_id)
 
 

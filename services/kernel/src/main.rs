@@ -644,6 +644,19 @@ fn runtime_tts_request_to_speech_with_synth(
         .get("chunkIndex")
         .and_then(serde_json::Value::as_i64)
         .unwrap_or(0);
+    let final_chunk = env
+        .data
+        .get("final")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if let Some(data) = speech.data.as_object_mut() {
+        data.insert(
+            "messageId".to_owned(),
+            serde_json::Value::String(message_id.to_owned()),
+        );
+        data.insert("chunkIndex".to_owned(), serde_json::json!(chunk_index));
+        data.insert("final".to_owned(), serde_json::json!(final_chunk));
+    }
     println!(
         "[kernel] [voice] runtime TTS message={message_id} chunk={chunk_index} audio={} voice={}",
         !speech.data["audioRef"].is_null(),
@@ -2893,6 +2906,9 @@ mod tests {
         assert_eq!(speech.correlation_id, Some(request.id));
         assert_eq!(speech.data["text"], json!("hello from chat"));
         assert_eq!(speech.data["companionId"], json!("default"));
+        assert_eq!(speech.data["messageId"], json!("msg-live"));
+        assert_eq!(speech.data["chunkIndex"], json!(2));
+        assert_eq!(speech.data["final"], json!(true));
         assert!(
             !speech.data["audioRef"].is_null(),
             "runtime chat TTS must use the same file-backed audio transport"

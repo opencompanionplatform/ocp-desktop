@@ -75,9 +75,11 @@ const CHAT_ASSISTANT_MESSAGE_RECEIVED: StringName = &"chat.assistant_message_rec
 const CHAT_RESPONSE_FAILED: StringName = &"chat.response_failed"
 
 const TTS_REQUESTED: StringName = &"tts.requested"
+const TTS_CANCEL_REQUESTED: StringName = &"tts.cancel_requested"
 const TTS_STARTED: StringName = &"tts.started"
 const TTS_FINISHED: StringName = &"tts.finished"
 const TTS_FAILED: StringName = &"tts.failed"
+const TTS_INTERRUPTED: StringName = &"tts.interrupted"
 
 const MEMORY_READ_REQUESTED: StringName = &"memory.read_requested"
 const MEMORY_WRITE_REQUESTED: StringName = &"memory.write_requested"

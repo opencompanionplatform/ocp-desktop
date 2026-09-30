@@ -74,9 +74,14 @@ func _run() -> void:
 		and int(tts_requests[0].get("chunk_index", -1)) == 0 \
 		and int(tts_requests[1].get("chunk_index", -1)) == 1 \
 		and _animation_count("idle") == 0 and chat_final_before_tts
-	for request in tts_requests.duplicate(true):
+	for index in range(tts_requests.size()):
+		var request: Dictionary = tts_requests[index].duplicate(true)
 		bus.publish(&"tts.started", request)
-		bus.publish(&"tts.finished", request)
+		if index == tts_requests.size() - 1:
+			request["outcome"] = "interrupted"
+			bus.publish(&"tts.interrupted", request)
+		else:
+			bus.publish(&"tts.finished", request)
 	var no_mid_idle := _animation_count("idle") == 1
 	var no_mid_think := _animation_count("think") == 1
 	var final_idle_once := _animation_count("idle") == 1
