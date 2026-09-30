@@ -24,12 +24,29 @@ func _run() -> void:
 		"schema": "character/3",
 		"voiceProfile": {"presentation": "female", "age": "adult", "thaiSpeechStyle": "feminine"},
 	})
-	context.update_character({"voice_profile": female_profile})
+	var soul_profile: Dictionary = character_service._legacy_soul_profile_from_entry({
+		"name": "Nene",
+		"presentation": {"descriptions": {"en": "A warm playful companion.", "th": "เพื่อนคู่ใจที่อบอุ่นและขี้เล่น"}},
+	})
+	var soul_speaking: Dictionary = soul_profile.get("speakingStyle", {})
+	soul_speaking["maxSentences"] = 4
+	soul_profile["speakingStyle"] = soul_speaking
+	var soul_traits: Dictionary = soul_profile.get("traits", {})
+	soul_traits["warmth"] = 0.82
+	soul_profile["traits"] = soul_traits
+	soul_profile["customText"] = "# Nene Soul\nCurious, playful, and never intrusive."
+	context.update_character({"voice_profile": female_profile, "soul_profile": soul_profile})
 	context.update_settings({"language": "th", "tts_voice_mode": "character"})
 	var character_prompt := ai_service._companion_system_prompt()
 	var character_profile_ok := female_profile == {
 		"gender": "female", "age": "adult", "thaiSpeechStyle": "feminine",
 	} and character_prompt.contains("Always reply in natural Thai") \
+		and character_prompt.contains("เพื่อนคู่ใจที่อบอุ่นและขี้เล่น") \
+		and character_prompt.contains("use 1 to 4 short sentences") \
+		and character_prompt.contains("warmth=0.82") \
+		and character_prompt.contains("Custom SOUL.md notes") \
+		and character_prompt.contains("never intrusive") \
+		and character_prompt.contains("descriptive data only") \
 		and character_prompt.contains("ค่ะ") \
 		and character_prompt.contains("Never use ผม or ครับ")
 

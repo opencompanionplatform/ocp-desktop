@@ -114,6 +114,7 @@ func load_active_character(package_info: Dictionary) -> Dictionary:
 			str(manifest.get("version", entry.get("version", "")))
 		),
 		"presentation": entry.get("presentation", {}),
+		"soul_profile": _soul_profile_from_package(package_root, entry),
 		"voice_profile": _voice_profile_from_entry(entry),
 		"audio_profile": entry.get("audioProfile", {"clips": [], "bindings": {}}),
 		"effects_profile": entry.get("effectsProfile", {"effects": [], "bindings": {}, "teleport": {}}),
@@ -1378,6 +1379,103 @@ func _failure(message: String) -> Dictionary:
 	var result := {"ok": false, "error": message}
 	event_bus.publish(&"character.load_failed", result)
 	return result
+
+
+func _legacy_soul_profile_from_entry(entry: Dictionary) -> Dictionary:
+	var presentation_value: Variant = entry.get("presentation", {})
+	var presentation: Dictionary = presentation_value if presentation_value is Dictionary else {}
+	var descriptions_value: Variant = presentation.get("descriptions", {})
+	var descriptions_raw: Dictionary = descriptions_value if descriptions_value is Dictionary else {}
+	var descriptions := {}
+	for locale in ["en", "th"]:
+		var text := str(descriptions_raw.get(locale, "")).strip_edges()
+		if not text.is_empty():
+			descriptions[locale] = text.left(1200)
+	return {
+		"schema": "soul/1",
+		"mode": "legacy-description",
+		"source": "character-presentation",
+		"identity": {"name": str(entry.get("name", "OCP Companion")), "descriptions": descriptions},
+		"traits": {
+			"warmth": 0.65,
+			"humor": 0.45,
+			"formality": 0.45,
+			"initiative": 0.5,
+			"energy": 0.5,
+			"talkativeness": 0.45,
+			"movement": 0.5,
+		},
+		"speakingStyle": {"concise": true, "maxSentences": 3, "formality": 0.45, "humor": 0.45, "warmth": 0.65},
+		"behavior": {"initiative": 0.5, "energy": 0.5, "movement": 0.5, "restSeconds": 20.0, "walkSeconds": 11.0, "hangSettleSeconds": 1.0},
+	}
+
+
+func _soul_profile_from_package(package_root: String, entry: Dictionary) -> Dictionary:
+	var fallback := _legacy_soul_profile_from_entry(entry)
+	var soul_path := package_root.path_join("assets").path_join("soul.json")
+	if not FileAccess.file_exists(soul_path):
+		return fallback
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(soul_path))
+	if not (parsed is Dictionary):
+		push_warning("CharacterService: invalid assets/soul.json; using presentation fallback")
+		return fallback
+	var raw: Dictionary = parsed
+	if str(raw.get("schema", "")) != "soul/1":
+		push_warning("CharacterService: unsupported Soul schema; using presentation fallback")
+		return fallback
+
+	var fallback_identity: Dictionary = fallback.get("identity", {})
+	var identity_value: Variant = raw.get("identity", {})
+	var identity_raw: Dictionary = identity_value if identity_value is Dictionary else {}
+	var descriptions_value: Variant = identity_raw.get("descriptions", fallback_identity.get("descriptions", {}))
+	var descriptions_raw: Dictionary = descriptions_value if descriptions_value is Dictionary else {}
+	var descriptions := {}
+	for locale in ["en", "th"]:
+		var text := str(descriptions_raw.get(locale, "")).strip_edges()
+		if not text.is_empty():
+			descriptions[locale] = text.left(1200)
+
+	var traits_value: Variant = raw.get("traits", {})
+	var traits_raw: Dictionary = traits_value if traits_value is Dictionary else {}
+	var traits := {
+		"warmth": clampf(float(traits_raw.get("warmth", 0.65)), 0.0, 1.0),
+		"humor": clampf(float(traits_raw.get("humor", 0.45)), 0.0, 1.0),
+		"formality": clampf(float(traits_raw.get("formality", 0.45)), 0.0, 1.0),
+		"initiative": clampf(float(traits_raw.get("initiative", 0.5)), 0.0, 1.0),
+		"energy": clampf(float(traits_raw.get("energy", 0.5)), 0.0, 1.0),
+		"talkativeness": clampf(float(traits_raw.get("talkativeness", 0.45)), 0.0, 1.0),
+		"movement": clampf(float(traits_raw.get("movement", 0.5)), 0.0, 1.0),
+	}
+	var speaking_value: Variant = raw.get("speakingStyle", {})
+	var speaking_raw: Dictionary = speaking_value if speaking_value is Dictionary else {}
+	var behavior_value: Variant = raw.get("behavior", {})
+	var behavior_raw: Dictionary = behavior_value if behavior_value is Dictionary else {}
+	return {
+		"schema": "soul/1",
+		"mode": str(raw.get("mode", "auto")),
+		"source": str(raw.get("source", "package")),
+		"customText": str(raw.get("customText", "")).strip_edges().left(2400),
+		"identity": {
+			"name": str(identity_raw.get("name", entry.get("name", "OCP Companion"))).strip_edges().left(160),
+			"descriptions": descriptions,
+		},
+		"traits": traits,
+		"speakingStyle": {
+			"concise": bool(speaking_raw.get("concise", true)),
+			"maxSentences": clampi(int(speaking_raw.get("maxSentences", 3)), 1, 6),
+			"formality": clampf(float(speaking_raw.get("formality", traits.get("formality", 0.45))), 0.0, 1.0),
+			"humor": clampf(float(speaking_raw.get("humor", traits.get("humor", 0.45))), 0.0, 1.0),
+			"warmth": clampf(float(speaking_raw.get("warmth", traits.get("warmth", 0.65))), 0.0, 1.0),
+		},
+		"behavior": {
+			"initiative": clampf(float(behavior_raw.get("initiative", traits.get("initiative", 0.5))), 0.0, 1.0),
+			"energy": clampf(float(behavior_raw.get("energy", traits.get("energy", 0.5))), 0.0, 1.0),
+			"movement": clampf(float(behavior_raw.get("movement", traits.get("movement", 0.5))), 0.0, 1.0),
+			"restSeconds": clampf(float(behavior_raw.get("restSeconds", 20.0)), 8.0, 45.0),
+			"walkSeconds": clampf(float(behavior_raw.get("walkSeconds", 11.0)), 5.0, 20.0),
+			"hangSettleSeconds": clampf(float(behavior_raw.get("hangSettleSeconds", 1.0)), 0.4, 2.0),
+		},
+	}
 
 
 func _voice_profile_from_entry(entry: Dictionary) -> Dictionary:

@@ -225,7 +225,27 @@ func _process(delta: float) -> void:
 
 func _behavior_profile(cycle_index: int) -> Dictionary:
 	var profile_index := posmod(BEHAVIOR_CYCLE_SEED + max(cycle_index, 0), BEHAVIOR_PROFILES.size())
-	return BEHAVIOR_PROFILES[profile_index].duplicate(true)
+	var profile: Dictionary = BEHAVIOR_PROFILES[profile_index].duplicate(true)
+	var soul := _soul_behavior_profile()
+	if soul.is_empty():
+		return profile
+	var target_walk := clampf(float(soul.get("walkSeconds", profile.get("walk_seconds", 11.0))), 9.0, 13.0)
+	var target_rest := clampf(float(soul.get("restSeconds", profile.get("rest_seconds", 18.0))), 16.0, 24.0)
+	var target_hang := clampf(float(soul.get("hangSettleSeconds", profile.get("hang_settle_seconds", 1.0))), 0.85, 1.25)
+	profile["walk_seconds"] = lerpf(float(profile.get("walk_seconds", target_walk)), target_walk, 0.55)
+	profile["rest_seconds"] = lerpf(float(profile.get("rest_seconds", target_rest)), target_rest, 0.55)
+	profile["hang_settle_seconds"] = lerpf(float(profile.get("hang_settle_seconds", target_hang)), target_hang, 0.55)
+	return profile
+
+
+func _soul_behavior_profile() -> Dictionary:
+	if context == null:
+		return {}
+	var soul_value: Variant = context.character.get("soul_profile", {})
+	if not (soul_value is Dictionary):
+		return {}
+	var behavior_value: Variant = (soul_value as Dictionary).get("behavior", {})
+	return behavior_value if behavior_value is Dictionary else {}
 
 
 func _activate_behavior_profile(profile: Dictionary) -> void:

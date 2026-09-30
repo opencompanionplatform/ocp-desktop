@@ -2,6 +2,7 @@ import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import JSZip from "jszip";
 import { exportStorePreview } from "./features/character/store-preview-export.js";
+import { buildSoulProfile, renderSoulMarkdown, SOUL_TRAIT_KEYS } from "./features/character/soul-profile.js";
 import { adaptiveConnectedGreenShadowCleanup } from "./features/character/cleanup-v4.js";
 import { unmixConnectedScreenColor } from "./features/character/cleanup-v5.js";
 import { autoSolidBackgroundMatte, estimateEdgeBackgroundKey, isClassicGreenKey } from "./features/character/cleanup-v6.js";
@@ -362,7 +363,7 @@ async function audioBlobForClip(clip, project) {
 }
 
 const PROJECT_STORAGE_KEY = "ocp.animation-studio.project.v1";
-const PROJECT_FILE_VERSION = 10;
+const PROJECT_FILE_VERSION = 11;
 const CURRENT_CHARACTER_SCHEMA = "character/3";
 const CHARACTER_LICENSE_OPTIONS = [
   { value: "All-Rights-Reserved", label: "All Rights Reserved" },
@@ -438,6 +439,9 @@ function defaultProject() {
     name: "New Character",
     descriptionEn: "",
     descriptionTh: "",
+    soulMode: "auto",
+    soulTraits: {},
+    soulCustomMarkdown: "",
     author: "",
     publisherLocked: false,
     license: "All-Rights-Reserved",
@@ -448,7 +452,7 @@ function defaultProject() {
 }
 
 function normalizeProjectSnapshot(snapshot) {
-  if (!snapshot?.project || ![1, 2, 3, 4, 5, 6, 7, 8, 9, PROJECT_FILE_VERSION].includes(snapshot.projectFileVersion)) return null;
+  if (!snapshot?.project || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, PROJECT_FILE_VERSION].includes(snapshot.projectFileVersion)) return null;
   if (snapshot.projectFileVersion === PROJECT_FILE_VERSION) return snapshot;
 
   // v1/v2 projects predate duration-driven frame counts and voice metadata.
@@ -462,6 +466,9 @@ function normalizeProjectSnapshot(snapshot) {
       ...snapshot.project,
       descriptionEn: String(snapshot.project.descriptionEn ?? snapshot.project.description ?? ""),
       descriptionTh: String(snapshot.project.descriptionTh ?? ""),
+      soulMode: ["auto", "guided", "custom"].includes(snapshot.project.soulMode) ? snapshot.project.soulMode : "auto",
+      soulTraits: snapshot.project.soulTraits && typeof snapshot.project.soulTraits === "object" ? { ...snapshot.project.soulTraits } : {},
+      soulCustomMarkdown: String(snapshot.project.soulCustomMarkdown ?? ""),
       publisherLocked: snapshot.project.publisherLocked === true,
       license: normalizeCharacterLicense(snapshot.project.license),
       voiceProfile: snapshot.project.voiceProfile ?? { presentation: "neutral", age: "adult", thaiSpeechStyle: "neutral" },
@@ -3189,8 +3196,15 @@ function App() {
       thumbnailAvailableNames,
     );
     const entryBlob = new Blob([JSON.stringify(characterJson, null, 2)], { type: "application/json" });
+    const soulProfile = buildSoulProfile(project);
+    const soulJsonBlob = new Blob([JSON.stringify(soulProfile, null, 2)], { type: "application/json" });
+    const soulMarkdownBlob = new Blob([renderSoulMarkdown(soulProfile)], { type: "text/markdown;charset=utf-8" });
     const zip = new JSZip();
-    const assets = [{ path: "assets/character.json", blob: entryBlob }];
+    const assets = [
+      { path: "assets/character.json", blob: entryBlob },
+      { path: "assets/soul.json", blob: soulJsonBlob },
+      { path: "assets/SOUL.md", blob: soulMarkdownBlob },
+    ];
 
     const missingStandardSheets = ANIMATION_NAMES.filter((name) => !clips[name]?.sheet);
     if (missingStandardSheets.length) {
@@ -3952,6 +3966,12 @@ function MarketplaceIdentityCard({ project, session, profile, identity, busy, on
 
 function ProjectStepV2({ project, updateProject, updateVoiceProfile, updateBuildProfile, onImport, sourceCount, readyCount, standardSourceCount, standardReadyCount, onNew, onSave, onExportProject, onImportProject, creatorCloudSession, creatorCloudProfile, marketplaceIdentity, marketplaceIdentityBusy, onCheckMarketplaceIdentity, onReserveMarketplaceIdentity, onReleaseMarketplaceIdentity }) {
   const buildProfile = buildProfileFor(project);
+  const soulProfile = buildSoulProfile(project);
+  const autoSoulMarkdown = renderSoulMarkdown(buildSoulProfile({ ...project, soulMode: "auto" }));
+  const updateSoulTrait = (key, value) => updateProject("soulTraits", {
+    ...(project.soulTraits ?? {}),
+    [key]: Math.max(0, Math.min(1, Number(value) || 0)),
+  });
   const publisherLabel = project.publisherLocked && project.author
     ? `Locked · ${project.author}`
     : creatorCloudProfile?.publisherId
@@ -3973,6 +3993,10 @@ function ProjectStepV2({ project, updateProject, updateVoiceProfile, updateBuild
         <Field label="Display name" value={project.name} onChange={(value) => updateProject("name", value)} />
         <label className="studio-field studio-field-wide">Description (English)<textarea value={project.descriptionEn ?? ""} maxLength={1200} rows={4} placeholder="Describe the character, personality, theme, costume, or notable details." onChange={(event) => updateProject("descriptionEn", event.target.value)} /></label>
         <label className="studio-field studio-field-wide">Description (Thai)<textarea value={project.descriptionTh ?? ""} maxLength={1200} rows={4} placeholder="อธิบายตัวละคร บุคลิก ธีม เครื่องแต่งกาย หรือรายละเอียดสำคัญ" onChange={(event) => updateProject("descriptionTh", event.target.value)} /></label>
+        <label className="studio-field">Character Soul mode<select value={project.soulMode ?? "auto"} onChange={(event) => updateProject("soulMode", event.target.value)}><option value="auto">Auto — from TH/EN descriptions</option><option value="guided">Guided — tune traits</option><option value="custom">Custom — edit SOUL.md</option></select></label>
+        <div className="studio-field studio-field-wide"><span>SOUL + Behavior preview</span><small>Warmth {soulProfile.traits.warmth.toFixed(2)} · Humor {soulProfile.traits.humor.toFixed(2)} · Formality {soulProfile.traits.formality.toFixed(2)} · Initiative {soulProfile.traits.initiative.toFixed(2)} · Energy {soulProfile.traits.energy.toFixed(2)} · Talk {soulProfile.traits.talkativeness.toFixed(2)} · Movement {soulProfile.traits.movement.toFixed(2)}</small><small>Runtime: walk {soulProfile.behavior.walkSeconds.toFixed(1)}s · rest {soulProfile.behavior.restSeconds.toFixed(1)}s · hang settle {soulProfile.behavior.hangSettleSeconds.toFixed(2)}s · reply ≤ {soulProfile.speakingStyle.maxSentences} sentences</small></div>
+        {(project.soulMode === "guided" || project.soulMode === "custom") && SOUL_TRAIT_KEYS.map((key) => <label className="studio-field" key={key}><span>{key.replace(/(^|_)([a-z])/g, (_match, _prefix, letter) => letter.toUpperCase())} · {Number(soulProfile.traits[key] ?? 0.5).toFixed(2)}</span><input type="range" min="0" max="1" step="0.05" value={Number(soulProfile.traits[key] ?? 0.5)} onChange={(event) => updateSoulTrait(key, event.target.value)} /></label>)}
+        {project.soulMode === "custom" && <div className="studio-field studio-field-wide"><span>SOUL.md (advanced)</span><textarea value={project.soulCustomMarkdown ?? ""} maxLength={2400} rows={10} placeholder="Advanced character identity/personality notes. Runtime treats this as package-authored characterization, not higher-priority safety instructions." onChange={(event) => updateProject("soulCustomMarkdown", event.target.value)} /><div className="studio-actions"><button type="button" className="studio-button" onClick={() => updateProject("soulCustomMarkdown", autoSoulMarkdown)}>Seed from Auto Soul</button></div><small>{String(project.soulCustomMarkdown ?? "").length}/2400 characters</small></div>}
         <Field label="Author / Publisher" value={publisherLabel} readOnly />
         <label className="studio-field">License<select value={normalizeCharacterLicense(project.license)} onChange={(event) => updateProject("license", event.target.value)}>{CHARACTER_LICENSE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
         <Field label="Entry schema (latest)" value={CURRENT_CHARACTER_SCHEMA} readOnly />

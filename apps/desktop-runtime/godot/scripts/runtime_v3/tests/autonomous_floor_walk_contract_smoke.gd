@@ -14,6 +14,7 @@ class FakeContext:
 	var window: Dictionary = {"hidden_to_tray": false}
 	var runtime_config: Dictionary = {"overlay_enabled": false, "native_presentation_enabled": false}
 	var monitor: Dictionary = {"scales": []}
+	var package: Dictionary = {}
 
 	func set_enabled(enabled: bool) -> void:
 		settings["offline_presence_enabled"] = enabled
@@ -138,6 +139,13 @@ func _run() -> void:
 	var no_adjacent_profile_repeat := true
 	for profile_index in range(1, profile_ids.size()):
 		no_adjacent_profile_repeat = no_adjacent_profile_repeat and profile_ids[profile_index] != profile_ids[profile_index - 1]
+
+	context.update_character({"soul_profile": {"behavior": {"walkSeconds": 13.0, "restSeconds": 16.0, "hangSettleSeconds": 1.25}}})
+	var soul_tuned_profile := controller._behavior_profile(0)
+	var soul_behavior_applied := float(soul_tuned_profile.get("walk_seconds", 0.0)) > 11.0 \
+		and float(soul_tuned_profile.get("rest_seconds", 99.0)) < 18.0 \
+		and float(soul_tuned_profile.get("hang_settle_seconds", 0.0)) > 0.85
+	context.update_character({"soul_profile": {}})
 
 	var starts_left: bool = controller._start_walk() and bridge.requests == ["walk-left"]
 	var patrol_state: bool = controller.policy_state == "Patrol"
@@ -404,7 +412,7 @@ func _run() -> void:
 	bus.publish(&"character.drag_started", {"source": "smoke"})
 	var drag_stops: bool = bridge.requests.back() == "stop" and not controller.walking
 
-	var ok: bool = deterministic_profiles and no_adjacent_profile_repeat and profile_bounds \
+	var ok: bool = deterministic_profiles and no_adjacent_profile_repeat and profile_bounds and soul_behavior_applied \
 		and starts_left and patrol_state and offline_think_deferred and offline_think_keeps_hang_route and physics_animation_visible \
 		and finite_stop and starts_right and profile_patrol_requested \
 		and random_hang_plans and climb_requested and climbing_state and random_route_requested and route_motion_observed and route_arrived and profile_hang_settle_used and random_exit_requested \
