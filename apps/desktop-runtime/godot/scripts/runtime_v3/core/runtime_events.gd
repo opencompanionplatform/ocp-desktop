@@ -73,6 +73,7 @@ const CHAT_ASSISTANT_STREAM_STARTED: StringName = &"chat.assistant_stream_starte
 const CHAT_ASSISTANT_STREAM_DELTA: StringName = &"chat.assistant_stream_delta"
 const CHAT_ASSISTANT_MESSAGE_RECEIVED: StringName = &"chat.assistant_message_received"
 const CHAT_RESPONSE_FAILED: StringName = &"chat.response_failed"
+const CHAT_RESPONSE_INTERRUPTED: StringName = &"chat.response_interrupted"
 
 const TTS_REQUESTED: StringName = &"tts.requested"
 const TTS_CANCEL_REQUESTED: StringName = &"tts.cancel_requested"

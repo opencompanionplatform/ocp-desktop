@@ -64,9 +64,7 @@ Do not report vulnerabilities through public issues. Follow `SECURITY.md` for co
 
 See `CODE_SIGNING.md`. OCP-owned release binaries are signed only through the approved release process. The PMv2-patched Godot runtime keeps upstream Godot identity and is outside the OCP Authenticode signing scope.
 
-**Free code signing provided by SignPath.io, certificate by SignPath Foundation.**
-
-OCP is completing the SignPath Foundation onboarding process. No artifact is described as SignPath-signed unless it was actually processed by the approved OCP SignPath configuration.
+OCP's SignPath Foundation application was not approved. The Foundation program is therefore not part of the current release dependency chain. Public artifacts must state their actual signing status explicitly; unsigned builds must never be presented as Authenticode-signed. A future commercial certificate or Foundation reapplication remains optional.
 
 ## License
 

@@ -57,6 +57,42 @@ func stop() -> void:
 	_tts_speaking_latched.clear()
 
 
+func _interrupt_active_response(next_message_id: String) -> void:
+	var previous_message_id := _active_message_id
+	if previous_message_id.is_empty() or previous_message_id == next_message_id:
+		return
+
+	if is_instance_valid(services) and is_instance_valid(services.ai_service) and services.ai_service.has_method("cancel"):
+		services.ai_service.call("cancel", previous_message_id)
+
+	# EventBus delivery is synchronous, so TTSService gets a chance to stop the
+	# current/queued audio before we erase Chat ownership below. Do not transition
+	# the previous message to IDLE: the new user turn immediately takes animation
+	# authority with THINK, avoiding an IDLE flash during barge-in.
+	event_bus.publish(&"tts.cancel_requested", {
+		"message_id": previous_message_id,
+		"reason": "new-user-turn",
+	})
+	event_bus.publish(&"ai.thinking_finished", {"message_id": previous_message_id, "interrupted": true})
+	event_bus.publish(&"chat.response_interrupted", {
+		"message_id": previous_message_id,
+		"next_message_id": next_message_id,
+		"reason": "new-user-turn",
+	})
+
+	_stream_text_by_message.erase(previous_message_id)
+	_bubble_chunkers.erase(previous_message_id)
+	_tts_chunkers.erase(previous_message_id)
+	_tts_chunk_index.erase(previous_message_id)
+	_tts_dispatched_chars.erase(previous_message_id)
+	_tts_pending_chunks.erase(previous_message_id)
+	_tts_response_complete.erase(previous_message_id)
+	_tts_dispatch_pending.erase(previous_message_id)
+	_tts_pause_generation.erase(previous_message_id)
+	_tts_speaking_latched.erase(previous_message_id)
+	_active_message_id = ""
+
+
 func _on_prompt_requested(payload: Dictionary) -> void:
 	var prompt := str(payload.get("prompt", "")).strip_edges()
 	if prompt.is_empty():
@@ -67,6 +103,7 @@ func _on_prompt_requested(payload: Dictionary) -> void:
 	if message_id.is_empty():
 		message_id = _next_message_id()
 		request["message_id"] = message_id
+	_interrupt_active_response(message_id)
 	_active_message_id = message_id
 	_stream_text_by_message[message_id] = ""
 	_bubble_chunkers[message_id] = SentenceChunkerScript.new()
