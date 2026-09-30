@@ -535,7 +535,7 @@ mod tests {
 
     #[test]
     fn binary_json_frame_decodes_setup_complete() {
-        let value = decode_binary_server_value(br#"{\"setupComplete\":{}}"#)
+        let value = decode_binary_server_value(br#"{"setupComplete":{}}"#)
             .expect("binary JSON frame should decode");
         assert_eq!(parse_server_message(&value), vec![GeminiAsrEvent::Ready]);
     }
