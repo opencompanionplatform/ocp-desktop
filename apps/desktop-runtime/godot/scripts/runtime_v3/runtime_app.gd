@@ -44,6 +44,7 @@ const StartupRegistrationServiceScript = preload("res://scripts/runtime_v3/servi
 const DesktopShellFunctionalAdapterScript = preload("res://scripts/runtime_v3/services/desktop_shell_functional_adapter.gd")
 
 const CharacterControllerScript = preload("res://scripts/runtime_v3/controllers/character_controller.gd")
+const ExpressionControllerScript = preload("res://scripts/runtime_v3/controllers/expression_controller.gd")
 const AnimationControllerScript = preload("res://scripts/runtime_v3/controllers/animation_controller.gd")
 const BubbleControllerScript = preload("res://scripts/runtime_v3/controllers/bubble_controller.gd")
 const HoverControllerScript = preload("res://scripts/runtime_v3/controllers/hover_controller.gd")
@@ -58,6 +59,7 @@ const SoundControllerScript = preload("res://scripts/runtime_v3/controllers/soun
 const EffectControllerScript = preload("res://scripts/runtime_v3/controllers/effect_controller.gd")
 const ChatSessionOrchestratorScript = preload("res://scripts/runtime_v3/controllers/chat_session_orchestrator.gd")
 const ProactiveLocalLLMCompanionControllerScript = preload("res://scripts/runtime_v3/controllers/proactive_local_llm_companion_controller.gd")
+const EmbodimentControllerScript = preload("res://scripts/runtime_v3/controllers/embodiment_controller.gd")
 const NotificationControllerScript = preload("res://scripts/runtime_v3/controllers/notification_controller.gd")
 const ProgressionCelebrationControllerScript = preload("res://scripts/runtime_v3/controllers/progression_celebration_controller.gd")
 const DraggablePanelControllerScript = preload("res://scripts/runtime_v3/controllers/draggable_panel_controller.gd")
@@ -543,6 +545,7 @@ func _create_services() -> void:
 func _create_controllers() -> void:
 	var definitions: Array = [
 		["CharacterController", CharacterControllerScript],
+		["ExpressionController", ExpressionControllerScript],
 		["AnimationController", AnimationControllerScript],
 		["BubbleController", BubbleControllerScript],
 		["HoverController", HoverControllerScript],
@@ -557,6 +560,7 @@ func _create_controllers() -> void:
 		["EffectController", EffectControllerScript],
 		["ChatSessionOrchestrator", ChatSessionOrchestratorScript],
 		["ProactiveLocalLLMCompanionController", ProactiveLocalLLMCompanionControllerScript],
+		["EmbodimentController", EmbodimentControllerScript],
 		["NotificationController", NotificationControllerScript],
 		["ProgressionCelebrationController", ProgressionCelebrationControllerScript],
 		["CharacterPickerDragController", DraggablePanelControllerScript],
@@ -586,6 +590,7 @@ func _bind_ui() -> void:
 	_apply_brand_icons()
 	var desktop_shell_enabled := OS.get_environment("OCP_DESKTOP_SHELL_ENABLED") == "1"
 	_controller("CharacterController").bind_character(%CompanionHost, %CompanionSprite)
+	_controller("ExpressionController").bind_sprite(%CompanionSprite)
 	_controller("AnimationController").bind_sprite(%CompanionSprite)
 	_controller("BubbleController").bind_ui(%CompanionHost, %BubblePanel, %BubbleLabel)
 	_controller("HoverController").bind(%CompanionHost, %HoverMenu)

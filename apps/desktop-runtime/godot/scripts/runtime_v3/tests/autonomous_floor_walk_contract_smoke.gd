@@ -146,6 +146,16 @@ func _run() -> void:
 		and float(soul_tuned_profile.get("rest_seconds", 99.0)) < 18.0 \
 		and float(soul_tuned_profile.get("hang_settle_seconds", 0.0)) > 0.85
 	context.update_character({"soul_profile": {}})
+	var neutral_embodiment_profile := controller._behavior_profile(0)
+	bus.publish(&"embodiment.state_changed", {"source": "embodiment-v1", "motionScale": 1.15, "mode": "reacting"})
+	var energetic_embodiment_profile := controller._behavior_profile(0)
+	bus.publish(&"embodiment.state_changed", {"source": "embodiment-v1", "motionScale": 0.85, "mode": "idle"})
+	var calm_embodiment_profile := controller._behavior_profile(0)
+	var embodiment_cadence_applied := float(energetic_embodiment_profile.get("walk_seconds", 0.0)) > float(neutral_embodiment_profile.get("walk_seconds", 0.0)) \
+		and float(energetic_embodiment_profile.get("rest_seconds", 99.0)) < float(neutral_embodiment_profile.get("rest_seconds", 0.0)) \
+		and float(calm_embodiment_profile.get("walk_seconds", 99.0)) < float(neutral_embodiment_profile.get("walk_seconds", 0.0)) \
+		and float(calm_embodiment_profile.get("rest_seconds", 0.0)) > float(neutral_embodiment_profile.get("rest_seconds", 99.0))
+	bus.publish(&"embodiment.state_changed", {"source": "embodiment-v1", "motionScale": 1.0, "mode": "idle"})
 
 	var starts_left: bool = controller._start_walk() and bridge.requests == ["walk-left"]
 	var patrol_state: bool = controller.policy_state == "Patrol"
@@ -412,7 +422,7 @@ func _run() -> void:
 	bus.publish(&"character.drag_started", {"source": "smoke"})
 	var drag_stops: bool = bridge.requests.back() == "stop" and not controller.walking
 
-	var ok: bool = deterministic_profiles and no_adjacent_profile_repeat and profile_bounds and soul_behavior_applied \
+	var ok: bool = deterministic_profiles and no_adjacent_profile_repeat and profile_bounds and soul_behavior_applied and embodiment_cadence_applied \
 		and starts_left and patrol_state and offline_think_deferred and offline_think_keeps_hang_route and physics_animation_visible \
 		and finite_stop and starts_right and profile_patrol_requested \
 		and random_hang_plans and climb_requested and climbing_state and random_route_requested and route_motion_observed and route_arrived and profile_hang_settle_used and random_exit_requested \

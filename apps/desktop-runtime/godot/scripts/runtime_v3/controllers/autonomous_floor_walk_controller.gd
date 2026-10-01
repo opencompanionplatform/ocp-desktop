@@ -74,6 +74,7 @@ var climb_progress_y := 0.0
 var climb_progress_y_valid := false
 var hang_progress_x := 0.0
 var hang_progress_x_valid := false
+var embodiment_motion_scale := 1.0
 
 
 func start() -> void:
@@ -92,6 +93,7 @@ func start() -> void:
 	event_bus.subscribe(&"character.physics_moved", _on_physics_moved)
 	event_bus.subscribe(&"character.hover_entered", _on_hover_entered)
 	event_bus.subscribe(&"character.hover_exited", _on_hover_exited)
+	event_bus.subscribe(&"embodiment.state_changed", _on_embodiment_state_changed)
 	if context != null and not context.context_changed.is_connected(_on_context_changed):
 		context.context_changed.connect(_on_context_changed)
 	_sync_chat_focus()
@@ -118,6 +120,7 @@ func stop() -> void:
 		event_bus.unsubscribe(&"character.physics_moved", _on_physics_moved)
 		event_bus.unsubscribe(&"character.hover_entered", _on_hover_entered)
 		event_bus.unsubscribe(&"character.hover_exited", _on_hover_exited)
+		event_bus.unsubscribe(&"embodiment.state_changed", _on_embodiment_state_changed)
 
 
 func _process(delta: float) -> void:
@@ -227,14 +230,21 @@ func _behavior_profile(cycle_index: int) -> Dictionary:
 	var profile_index := posmod(BEHAVIOR_CYCLE_SEED + max(cycle_index, 0), BEHAVIOR_PROFILES.size())
 	var profile: Dictionary = BEHAVIOR_PROFILES[profile_index].duplicate(true)
 	var soul := _soul_behavior_profile()
-	if soul.is_empty():
-		return profile
-	var target_walk := clampf(float(soul.get("walkSeconds", profile.get("walk_seconds", 11.0))), 9.0, 13.0)
-	var target_rest := clampf(float(soul.get("restSeconds", profile.get("rest_seconds", 18.0))), 16.0, 24.0)
-	var target_hang := clampf(float(soul.get("hangSettleSeconds", profile.get("hang_settle_seconds", 1.0))), 0.85, 1.25)
-	profile["walk_seconds"] = lerpf(float(profile.get("walk_seconds", target_walk)), target_walk, 0.55)
-	profile["rest_seconds"] = lerpf(float(profile.get("rest_seconds", target_rest)), target_rest, 0.55)
-	profile["hang_settle_seconds"] = lerpf(float(profile.get("hang_settle_seconds", target_hang)), target_hang, 0.55)
+	if not soul.is_empty():
+		var target_walk := clampf(float(soul.get("walkSeconds", profile.get("walk_seconds", 11.0))), 9.0, 13.0)
+		var target_rest := clampf(float(soul.get("restSeconds", profile.get("rest_seconds", 18.0))), 16.0, 24.0)
+		var target_hang := clampf(float(soul.get("hangSettleSeconds", profile.get("hang_settle_seconds", 1.0))), 0.85, 1.25)
+		profile["walk_seconds"] = lerpf(float(profile.get("walk_seconds", target_walk)), target_walk, 0.55)
+		profile["rest_seconds"] = lerpf(float(profile.get("rest_seconds", target_rest)), target_rest, 0.55)
+		profile["hang_settle_seconds"] = lerpf(float(profile.get("hang_settle_seconds", target_hang)), target_hang, 0.55)
+
+	# Embodiment adjusts only the cadence of the *next* autonomous route. It
+	# never changes Kernel Physics velocity or mutates an active walk/climb/hang,
+	# preserving deterministic contact/multi-monitor authority.
+	var motion_scale := clampf(embodiment_motion_scale, 0.85, 1.15)
+	profile["walk_seconds"] = clampf(float(profile.get("walk_seconds", 11.0)) * motion_scale, 7.5, 15.0)
+	profile["rest_seconds"] = clampf(float(profile.get("rest_seconds", 18.0)) / motion_scale, 12.0, 30.0)
+	profile["hang_settle_seconds"] = clampf(float(profile.get("hang_settle_seconds", 1.0)) / motion_scale, 0.70, 1.50)
 	return profile
 
 
@@ -781,6 +791,12 @@ func _has_active_autonomous_motion() -> bool:
 func _on_animation_finished(payload: Dictionary) -> void:
 	if str(payload.get("name", "")) in ["appear", "disappear"]:
 		lifecycle_active = false
+
+
+func _on_embodiment_state_changed(payload: Dictionary) -> void:
+	if str(payload.get("source", "")) != "embodiment-v1":
+		return
+	embodiment_motion_scale = clampf(float(payload.get("motionScale", 1.0)), 0.85, 1.15)
 
 
 func _on_context_changed(section: StringName) -> void:

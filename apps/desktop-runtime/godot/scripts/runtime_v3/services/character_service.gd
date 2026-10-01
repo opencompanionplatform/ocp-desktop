@@ -118,6 +118,7 @@ func load_active_character(package_info: Dictionary) -> Dictionary:
 		"voice_profile": _voice_profile_from_entry(entry),
 		"audio_profile": entry.get("audioProfile", {"clips": [], "bindings": {}}),
 		"effects_profile": entry.get("effectsProfile", {"effects": [], "bindings": {}, "teleport": {}}),
+		"expressions": entry.get("expressions", {}),
 		"bubble_anchor": _vector2_from(runtime_meta.get("bubbleAnchor", [0, -176]), Vector2(0, -176)),
 		"hitbox": _rect2_from(runtime_meta.get("hitbox", [44, 40, 220, 248]), Rect2(44, 40, 220, 248)),
 		"animations": animation_names,

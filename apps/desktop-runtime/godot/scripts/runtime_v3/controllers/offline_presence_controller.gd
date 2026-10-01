@@ -38,6 +38,8 @@ var sleeping := false
 var wake_pending := false
 var last_movement_state := "stationary"
 var last_surface_kind := "desktop_floor"
+var embodiment_mode := "idle"
+var embodiment_ambient_interval_scale := 1.0
 
 
 func start() -> void:
@@ -55,6 +57,7 @@ func start() -> void:
 	event_bus.subscribe(&"character.presentation_state", _on_physics_moved)
 	event_bus.subscribe(&"character.physics_moved", _on_physics_moved)
 	event_bus.subscribe(&"emotion.changed", _on_emotion_changed)
+	event_bus.subscribe(&"embodiment.state_changed", _on_embodiment_state_changed)
 	event_bus.subscribe(&"tts.requested", _on_tts_requested)
 	event_bus.subscribe(&"tts.finished", _on_tts_terminal)
 	event_bus.subscribe(&"tts.failed", _on_tts_terminal)
@@ -76,6 +79,7 @@ func stop() -> void:
 	event_bus.unsubscribe(&"character.presentation_state", _on_physics_moved)
 	event_bus.unsubscribe(&"character.physics_moved", _on_physics_moved)
 	event_bus.unsubscribe(&"emotion.changed", _on_emotion_changed)
+	event_bus.unsubscribe(&"embodiment.state_changed", _on_embodiment_state_changed)
 	event_bus.unsubscribe(&"tts.requested", _on_tts_requested)
 	event_bus.unsubscribe(&"tts.finished", _on_tts_terminal)
 	event_bus.unsubscribe(&"tts.failed", _on_tts_terminal)
@@ -162,6 +166,11 @@ func _is_allowed() -> bool:
 		return false
 	if context == null:
 		return false
+	# Embodiment coordinates higher-level body ownership. Ambient presentation
+	# only runs in the idle body mode; thinking/speaking/reaction/interaction and
+	# locomotion keep their existing dedicated authorities.
+	if embodiment_mode != "idle":
+		return false
 	# Ambient/local idle behavior never owns locomotion. Physics is the only
 	# authority while walking, jumping, climbing, hanging, or falling.
 	if last_movement_state != "stationary" or last_surface_kind != "desktop_floor":
@@ -191,9 +200,10 @@ func _soul_section(key: String) -> Dictionary:
 
 func _schedule_interval_seconds() -> float:
 	var behavior := _soul_section("behavior")
-	if behavior.is_empty():
-		return SCHEDULE_INTERVAL_SECONDS
-	return clampf(float(behavior.get("restSeconds", SCHEDULE_INTERVAL_SECONDS)), 12.0, 30.0)
+	var base_interval := SCHEDULE_INTERVAL_SECONDS
+	if not behavior.is_empty():
+		base_interval = clampf(float(behavior.get("restSeconds", SCHEDULE_INTERVAL_SECONDS)), 12.0, 30.0)
+	return clampf(base_interval * embodiment_ambient_interval_scale, 10.0, 36.0)
 
 
 func _soul_ambient_rotation() -> PackedStringArray:
@@ -279,6 +289,17 @@ func _on_physics_moved(payload: Dictionary) -> void:
 		if sleeping:
 			sleeping = false
 			wake_pending = false
+
+
+func _on_embodiment_state_changed(payload: Dictionary) -> void:
+	if str(payload.get("source", "")) != "embodiment-v1":
+		return
+	embodiment_mode = str(payload.get("mode", "idle")).strip_edges().to_lower()
+	if embodiment_mode.is_empty():
+		embodiment_mode = "idle"
+	embodiment_ambient_interval_scale = clampf(float(payload.get("ambientIntervalScale", 1.0)), 0.75, 1.25)
+	if embodiment_mode != "idle":
+		elapsed_seconds = 0.0
 
 
 func _on_emotion_changed(payload: Dictionary) -> void:
