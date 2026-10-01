@@ -26,6 +26,7 @@ ocp-llm-router = { path = "../../packages/llm-router" }
 ocp-audio-store = { path = "../../packages/audio-store" }
 ocp-voice = { path = "../../packages/voice" }
 ocp-event-bus = { path = "../../packages/event-bus" }
+ocp-memory = { path = "../../packages/memory" }
 # Phase 6.5.3H: Kernel-owned Desktop Physics host and event publisher.
 ocp-desktop-physics = { path = "../../packages/desktop-physics" }
 # Phase 6.5.2C: Kernel-owned Desktop World lifecycle.

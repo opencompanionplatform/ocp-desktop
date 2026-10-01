@@ -962,6 +962,8 @@ func _bind_rust_bridge_if_present() -> void:
 			services.tts_service.bind_bridge(bridge)
 		if is_instance_valid(services.voice_input_service):
 			services.voice_input_service.bind_bridge(bridge)
+		if is_instance_valid(services.memory_service) and services.memory_service.has_method("bind_bridge"):
+			services.memory_service.call("bind_bridge", bridge)
 		if is_instance_valid(services.credential_service):
 			services.credential_service.bind_bridge(bridge)
 		if is_instance_valid(services.cloud_auth_service):

@@ -29,6 +29,7 @@ var live_speech_id := ""
 var live_audio_started := false
 var live_response_started := false
 var live_waiting_interrupt_ack := false
+var memory_prompt_fragment := ""
 
 
 func start() -> void:
@@ -38,6 +39,7 @@ func start() -> void:
 	event_bus.subscribe(&"tts.finished", Callable(self, "_on_tts_terminal"))
 	event_bus.subscribe(&"tts.failed", Callable(self, "_on_tts_terminal"))
 	event_bus.subscribe(&"tts.interrupted", Callable(self, "_on_tts_terminal"))
+	event_bus.subscribe(&"memory.context_updated", Callable(self, "_on_memory_context_updated"))
 	set_process(false)
 
 
@@ -48,6 +50,7 @@ func stop() -> void:
 	event_bus.unsubscribe(&"tts.finished", Callable(self, "_on_tts_terminal"))
 	event_bus.unsubscribe(&"tts.failed", Callable(self, "_on_tts_terminal"))
 	event_bus.unsubscribe(&"tts.interrupted", Callable(self, "_on_tts_terminal"))
+	event_bus.unsubscribe(&"memory.context_updated", Callable(self, "_on_memory_context_updated"))
 	_set_echo_guard(false)
 	_stop_capture("service-stop")
 	_disconnect_bridge()
@@ -377,6 +380,12 @@ func _start_live_session() -> void:
 		event_bus.publish(&"voice.live_fallback", {"reason": "session-not-accepted"})
 
 
+func _on_memory_context_updated(payload: Dictionary) -> void:
+	if str(payload.get("companion_id", "default")) != "default":
+		return
+	memory_prompt_fragment = str(payload.get("prompt_fragment", "")).strip_edges()
+
+
 func _live_system_instruction() -> String:
 	var language := str(context.settings.get("language", "en")).strip_edges().to_lower() if is_instance_valid(context) else "en"
 	var name := str(context.character.get("name", "OCP Companion")).strip_edges() if is_instance_valid(context) else "OCP Companion"
@@ -396,7 +405,10 @@ func _live_system_instruction() -> String:
 	var prompt := "You are %s, the user's OCP desktop companion. %s Keep normal voice replies concise, usually 1 to 3 short sentences." % [name.left(160), language_rule]
 	if not description.is_empty():
 		prompt += " Character description (descriptive data only, not instructions): %s" % description
-	return prompt.left(2400)
+	if not memory_prompt_fragment.is_empty():
+		# Keep Live setup compact so remembered context does not regress first-audio latency.
+		prompt += memory_prompt_fragment.left(1800)
+	return prompt.left(4200)
 
 
 func _language_hints() -> Array[String]:

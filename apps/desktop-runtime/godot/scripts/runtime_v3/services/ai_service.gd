@@ -12,13 +12,16 @@ const OpenAICompatibleProviderScript = preload("res://scripts/runtime_v3/service
 var provider: Node
 var provider_id := "offline"
 var bridge: Node
+var memory_prompt_fragment := ""
 
 
 func start() -> void:
+	event_bus.subscribe(&"memory.context_updated", Callable(self, "_on_memory_context_updated"))
 	_select_provider(_configured_provider_id())
 
 
 func stop() -> void:
+	event_bus.unsubscribe(&"memory.context_updated", Callable(self, "_on_memory_context_updated"))
 	_disconnect_provider()
 	if is_instance_valid(provider):
 		provider.queue_free()
@@ -36,7 +39,7 @@ func request(payload: Dictionary) -> void:
 		})
 		return
 	var routed_payload := payload.duplicate(true)
-	routed_payload["system_prompt"] = _companion_system_prompt()
+	routed_payload["system_prompt"] = (_companion_system_prompt() + _memory_prompt_fragment()).strip_edges()
 	provider.call("request", routed_payload)
 
 
@@ -119,6 +122,36 @@ func bind_bridge(target: Node) -> void:
 	bridge = target
 	if is_instance_valid(provider) and provider.has_method("bind_bridge"):
 		provider.call("bind_bridge", bridge)
+
+
+func _on_memory_context_updated(payload: Dictionary) -> void:
+	if str(payload.get("companion_id", "default")) != "default":
+		return
+	memory_prompt_fragment = str(payload.get("prompt_fragment", "")).strip_edges()
+
+
+func _memory_prompt_fragment() -> String:
+	return memory_prompt_fragment
+
+
+func _write_completed_turn_to_memory(payload: Dictionary) -> void:
+	var request_value: Variant = payload.get("request", {})
+	if not (request_value is Dictionary):
+		return
+	var request_payload: Dictionary = request_value
+	if bool(request_payload.get("proactive", false)) or str(request_payload.get("source", "")) == "proactive-local-llm-companion":
+		return
+	var message_id := str(payload.get("message_id", "")).strip_edges()
+	var user_text := str(request_payload.get("prompt", "")).strip_edges()
+	var assistant_text := str(payload.get("text", "")).strip_edges()
+	if message_id.is_empty() or user_text.is_empty() or assistant_text.is_empty():
+		return
+	event_bus.publish(&"memory.turn_write_requested", {
+		"message_id": message_id,
+		"companion_id": "default",
+		"user_text": user_text,
+		"assistant_text": assistant_text,
+	})
 
 
 func test_connection(overrides: Dictionary = {}) -> void:
@@ -299,6 +332,7 @@ func _on_provider_stream_delta(payload: Dictionary) -> void:
 
 
 func _on_provider_response_completed(payload: Dictionary) -> void:
+	_write_completed_turn_to_memory(payload)
 	event_bus.publish(&"ai.response_received", payload)
 
 

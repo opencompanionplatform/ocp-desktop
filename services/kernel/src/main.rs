@@ -93,6 +93,10 @@ use ocp_llm_router::{
     CredentialStore, InMemoryConsentStore, InMemoryCredentialStore, OsKeystoreCredentialStore,
     Router,
 };
+use ocp_memory::{
+    Caller as MemoryCaller, ContentType as MemoryContentType, ListRequest as MemoryListRequest,
+    MemoryScope, MemoryStore, OsKeystoreKeyStore, SqliteStore, WriteRequest as MemoryWriteRequest,
+};
 use ocp_package_loader::{load as load_package, TrustStore};
 use ocp_shared_types::{Envelope, Point2};
 use ocp_voice::{synthesize_speech_request, SpeakRequest};
@@ -860,6 +864,280 @@ fn runtime_cloud_ai_request_to_response_with_credential(
         }
         Err(error) => failure(format!("OpenAI-compatible request failed: {error:?}")),
     }
+}
+
+fn runtime_memory_db_path() -> std::path::PathBuf {
+    if let Some(explicit) = std::env::var_os("OCP_MEMORY_DB") {
+        return std::path::PathBuf::from(explicit);
+    }
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        return std::path::PathBuf::from(local)
+            .join("OCP")
+            .join("memory")
+            .join("companion-memory.db");
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        return std::path::PathBuf::from(home)
+            .join(".ocp")
+            .join("memory")
+            .join("companion-memory.db");
+    }
+    std::env::temp_dir()
+        .join("ocp")
+        .join("memory")
+        .join("companion-memory.db")
+}
+
+fn open_runtime_memory_store() -> Result<SqliteStore, String> {
+    let path = runtime_memory_db_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("create memory directory failed: {error}"))?;
+    }
+    let mut key_store = OsKeystoreKeyStore::new("ocp-memory");
+    SqliteStore::open_profile(&path, "default", &mut key_store)
+        .map_err(|error| format!("open memory store failed: {error}"))
+}
+
+fn runtime_memory_caller() -> MemoryCaller {
+    MemoryCaller::Core {
+        component: "runtime-v3-chat".to_owned(),
+    }
+}
+
+fn ensure_runtime_memory_store(
+    store: &mut Option<SqliteStore>,
+) -> Result<&mut SqliteStore, String> {
+    if store.is_none() {
+        *store = Some(open_runtime_memory_store()?);
+    }
+    store
+        .as_mut()
+        .ok_or_else(|| "memory store is unavailable".to_owned())
+}
+
+fn bounded_memory_text(value: &str, max_chars: usize) -> String {
+    value.trim().chars().take(max_chars).collect()
+}
+
+fn normalized_runtime_memory_companion_id(value: &str) -> Result<String, String> {
+    let normalized = if value.trim().is_empty() {
+        "default"
+    } else {
+        value.trim()
+    };
+    if !valid_companion_id(normalized) {
+        return Err("invalid companion id for memory request".to_owned());
+    }
+    Ok(normalized.to_owned())
+}
+
+fn bounded_memory_content_for_transport(content: &str) -> String {
+    let trimmed = content.trim();
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        if value.get("kind").and_then(serde_json::Value::as_str) == Some("conversation-turn") {
+            return json!({
+                "kind": "conversation-turn",
+                "messageId": bounded_memory_text(
+                    value.get("messageId").and_then(serde_json::Value::as_str).unwrap_or_default(),
+                    160,
+                ),
+                "user": bounded_memory_text(
+                    value.get("user").and_then(serde_json::Value::as_str).unwrap_or_default(),
+                    600,
+                ),
+                "assistant": bounded_memory_text(
+                    value.get("assistant").and_then(serde_json::Value::as_str).unwrap_or_default(),
+                    900,
+                ),
+            })
+            .to_string();
+        }
+    }
+    bounded_memory_text(trimmed, 2400)
+}
+
+fn runtime_memory_recent_response(
+    env: &Envelope,
+    memory_store: &mut Option<SqliteStore>,
+) -> Option<Envelope> {
+    if env.event_type != "ocp.runtime.memory-recent-requested" {
+        return None;
+    }
+    let request_id = env
+        .data
+        .get("requestId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    let raw_companion_id = env
+        .data
+        .get("companionId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("default");
+    let limit = env
+        .data
+        .get("limit")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(8)
+        .clamp(1, 12) as usize;
+    let companion_id = match normalized_runtime_memory_companion_id(raw_companion_id) {
+        Ok(value) => value,
+        Err(error) => {
+            let response_data = json!({
+                "requestId": request_id,
+                "companionId": raw_companion_id,
+                "ok": false,
+                "error": error,
+                "records": [],
+            });
+            return Envelope::new("ocp.runtime.memory-recent", "kernel", response_data)
+                .ok()
+                .map(|reply| reply.with_correlation(env.id));
+        }
+    };
+    let scope = MemoryScope::Companion(companion_id.clone());
+
+    let response_data = match ensure_runtime_memory_store(memory_store).and_then(|store| {
+        store
+            .list(
+                &runtime_memory_caller(),
+                MemoryListRequest {
+                    scope,
+                    after: None,
+                    limit: 256,
+                },
+            )
+            .map_err(|error| format!("list recent memory failed: {error}"))
+    }) {
+        Ok(listed) => {
+            let mut recent = listed.records;
+            if recent.len() > limit {
+                recent.drain(0..recent.len() - limit);
+            }
+            let records = recent
+                .into_iter()
+                .map(|record| {
+                    json!({
+                        "recordId": record.id,
+                        "content": bounded_memory_content_for_transport(&record.content),
+                        "createdAt": record.created_at,
+                    })
+                })
+                .collect::<Vec<_>>();
+            json!({
+                "requestId": request_id,
+                "companionId": companion_id,
+                "ok": true,
+                "records": records,
+            })
+        }
+        Err(error) => json!({
+            "requestId": request_id,
+            "companionId": companion_id,
+            "ok": false,
+            "error": error,
+            "records": [],
+        }),
+    };
+
+    Envelope::new("ocp.runtime.memory-recent", "kernel", response_data)
+        .ok()
+        .map(|reply| reply.with_correlation(env.id))
+}
+
+fn runtime_memory_turn_write_response(
+    env: &Envelope,
+    memory_store: &mut Option<SqliteStore>,
+) -> Option<Envelope> {
+    if env.event_type != "ocp.runtime.memory-turn-write" {
+        return None;
+    }
+    let message_id = env
+        .data
+        .get("messageId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    let raw_companion_id = env
+        .data
+        .get("companionId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("default");
+    let companion_id = match normalized_runtime_memory_companion_id(raw_companion_id) {
+        Ok(value) => value,
+        Err(error) => {
+            let response_data = json!({
+                "messageId": message_id,
+                "companionId": raw_companion_id,
+                "ok": false,
+                "error": error,
+            });
+            return Envelope::new("ocp.runtime.memory-turn-written", "kernel", response_data)
+                .ok()
+                .map(|reply| reply.with_correlation(env.id));
+        }
+    };
+    let user_text = bounded_memory_text(
+        env.data
+            .get("userText")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default(),
+        2400,
+    );
+    let assistant_text = bounded_memory_text(
+        env.data
+            .get("assistantText")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default(),
+        4000,
+    );
+    let scope = MemoryScope::Companion(companion_id.clone());
+
+    let write_result = if message_id.is_empty() || user_text.is_empty() || assistant_text.is_empty()
+    {
+        Err("memory turn is missing message id, user text, or assistant text".to_owned())
+    } else {
+        let content = json!({
+            "kind": "conversation-turn",
+            "messageId": message_id,
+            "user": user_text,
+            "assistant": assistant_text,
+        })
+        .to_string();
+        ensure_runtime_memory_store(memory_store).and_then(|store| {
+            store
+                .write(
+                    &runtime_memory_caller(),
+                    MemoryWriteRequest {
+                        scope,
+                        content,
+                        content_type: MemoryContentType::ApplicationJson,
+                        sensitive: false,
+                        source: "runtime-v3-chat".to_owned(),
+                    },
+                )
+                .map_err(|error| format!("write memory turn failed: {error}"))
+        })
+    };
+
+    let response_data = match write_result {
+        Ok(outcome) => json!({
+            "messageId": message_id,
+            "companionId": companion_id,
+            "ok": true,
+            "recordId": outcome.record_id,
+        }),
+        Err(error) => json!({
+            "messageId": message_id,
+            "companionId": companion_id,
+            "ok": false,
+            "error": error,
+        }),
+    };
+    Envelope::new("ocp.runtime.memory-turn-written", "kernel", response_data)
+        .ok()
+        .map(|reply| reply.with_correlation(env.id))
 }
 
 /// The shared character dir the runtime renders from (`OCP_CHARACTER_DIR`, else
@@ -2494,6 +2772,10 @@ fn drain_outcomes(
 ) {
     let mut runtime_asr: Option<(String, GeminiLiveAsrControl)> = None;
     let mut runtime_live_voice: Option<(String, GeminiLiveVoiceControl)> = None;
+    // Lazy-open once per runtime connection. This avoids re-opening SQLCipher
+    // and consulting the OS keystore on every chat turn while still reopening
+    // the same encrypted profile after a Runtime reconnect/restart.
+    let mut runtime_memory_store: Option<SqliteStore> = None;
     loop {
         match recv_envelope(&mut conn) {
             Ok(env) => {
@@ -2710,6 +2992,24 @@ fn drain_outcomes(
                     continue;
                 }
 
+                if env.event_type == "ocp.runtime.memory-recent-requested" {
+                    if let Some(response) =
+                        runtime_memory_recent_response(&env, &mut runtime_memory_store)
+                    {
+                        push(&presentation, &response);
+                    }
+                    continue;
+                }
+
+                if env.event_type == "ocp.runtime.memory-turn-write" {
+                    if let Some(response) =
+                        runtime_memory_turn_write_response(&env, &mut runtime_memory_store)
+                    {
+                        push(&presentation, &response);
+                    }
+                    continue;
+                }
+
                 if env.event_type == "ocp.runtime.ai-requested" {
                     if let Some(response) = runtime_cloud_ai_request_to_response(&env) {
                         push(&presentation, &response);
@@ -2733,6 +3033,44 @@ mod tests {
     use ocp_llm_router::adapter::ReferenceSynthesizer;
 
     use super::*;
+
+    #[test]
+    fn runtime_memory_companion_id_is_bounded_to_the_existing_id_contract() {
+        assert_eq!(
+            normalized_runtime_memory_companion_id("").expect("empty id uses default"),
+            "default"
+        );
+        assert_eq!(
+            normalized_runtime_memory_companion_id("character.nene-01").expect("safe companion id"),
+            "character.nene-01"
+        );
+        assert!(normalized_runtime_memory_companion_id("../../escape").is_err());
+        assert!(normalized_runtime_memory_companion_id("bad id").is_err());
+    }
+
+    #[test]
+    fn runtime_memory_transport_keeps_conversation_json_valid_when_bounded() {
+        let content = json!({
+            "kind": "conversation-turn",
+            "messageId": "m-1",
+            "user": "u".repeat(2000),
+            "assistant": "a".repeat(5000),
+        })
+        .to_string();
+        let bounded = bounded_memory_content_for_transport(&content);
+        let parsed: serde_json::Value =
+            serde_json::from_str(&bounded).expect("bounded turn must remain valid JSON");
+        assert_eq!(parsed["kind"], "conversation-turn");
+        assert_eq!(parsed["user"].as_str().expect("user").chars().count(), 600);
+        assert_eq!(
+            parsed["assistant"]
+                .as_str()
+                .expect("assistant")
+                .chars()
+                .count(),
+            900
+        );
+    }
 
     #[test]
     fn expected_runtime_disconnect_classifies_normal_pipe_closure() {

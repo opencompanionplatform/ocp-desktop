@@ -1535,6 +1535,57 @@ impl OcpRuntimeBridge {
             .is_some_and(|sender| sender.send(env).is_ok())
     }
 
+    #[func]
+    fn request_memory_recent(&mut self, request_id: GString, companion_id: GString, limit: i64) -> bool {
+        let request_id = request_id.to_string();
+        if request_id.trim().is_empty() {
+            return false;
+        }
+        let data = serde_json::json!({
+            "schemaVersion": 1,
+            "requestId": request_id,
+            "companionId": companion_id.to_string(),
+            "limit": limit.clamp(1, 12),
+        });
+        let Ok(env) = Envelope::new("ocp.runtime.memory-recent-requested", "runtime", data) else {
+            return false;
+        };
+        self.outbox
+            .as_ref()
+            .is_some_and(|sender| sender.send(env).is_ok())
+    }
+
+    #[func]
+    fn request_memory_turn_write(
+        &mut self,
+        message_id: GString,
+        companion_id: GString,
+        user_text: GString,
+        assistant_text: GString,
+    ) -> bool {
+        let (clean_user_text, _) = sanitize_display_text(&user_text.to_string());
+        let (clean_assistant_text, _) = sanitize_display_text(&assistant_text.to_string());
+        if message_id.to_string().trim().is_empty()
+            || clean_user_text.trim().is_empty()
+            || clean_assistant_text.trim().is_empty()
+        {
+            return false;
+        }
+        let data = serde_json::json!({
+            "schemaVersion": 1,
+            "messageId": message_id.to_string(),
+            "companionId": companion_id.to_string(),
+            "userText": clean_user_text,
+            "assistantText": clean_assistant_text,
+        });
+        let Ok(env) = Envelope::new("ocp.runtime.memory-turn-write", "runtime", data) else {
+            return false;
+        };
+        self.outbox
+            .as_ref()
+            .is_some_and(|sender| sender.send(env).is_ok())
+    }
+
     // --- Signals: request-facts translated for GDScript (RUNTIME_API §2) ---
     // `text` arguments are already sanitized (§5) before the signal fires.
 
@@ -1673,6 +1724,18 @@ impl OcpRuntimeBridge {
 
     #[signal]
     fn speech_finished(speech_id: GString, companion_id: GString, outcome: GString);
+
+    #[signal]
+    fn memory_recent_received(request_id: GString, companion_id: GString, records_json: GString);
+
+    #[signal]
+    fn memory_recent_failed(request_id: GString, companion_id: GString, error: GString);
+
+    #[signal]
+    fn memory_turn_written(message_id: GString, companion_id: GString, record_id: GString);
+
+    #[signal]
+    fn memory_turn_write_failed(message_id: GString, companion_id: GString, error: GString);
 
     #[signal]
     fn ai_response_received(
@@ -2333,6 +2396,91 @@ impl OcpRuntimeBridge {
         }
 
         match env.event_type.as_str() {
+            "ocp.runtime.memory-recent" => {
+                let request_id = env
+                    .data
+                    .get("requestId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let companion_id = env
+                    .data
+                    .get("companionId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("default");
+                if env.data.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
+                    let records_json = env
+                        .data
+                        .get("records")
+                        .map_or_else(|| "[]".to_owned(), |records| {
+                            serde_json::to_string(records).unwrap_or_else(|_| "[]".to_owned())
+                        });
+                    self.base_mut().emit_signal(
+                        "memory_recent_received",
+                        &[
+                            request_id.to_variant(),
+                            companion_id.to_variant(),
+                            records_json.to_variant(),
+                        ],
+                    );
+                } else {
+                    let error = env
+                        .data
+                        .get("error")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("Memory recall failed");
+                    let (clean_error, _) = sanitize_display_text(error);
+                    self.base_mut().emit_signal(
+                        "memory_recent_failed",
+                        &[
+                            request_id.to_variant(),
+                            companion_id.to_variant(),
+                            clean_error.to_variant(),
+                        ],
+                    );
+                }
+            }
+            "ocp.runtime.memory-turn-written" => {
+                let message_id = env
+                    .data
+                    .get("messageId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let companion_id = env
+                    .data
+                    .get("companionId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("default");
+                if env.data.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
+                    let record_id = env
+                        .data
+                        .get("recordId")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default();
+                    self.base_mut().emit_signal(
+                        "memory_turn_written",
+                        &[
+                            message_id.to_variant(),
+                            companion_id.to_variant(),
+                            record_id.to_variant(),
+                        ],
+                    );
+                } else {
+                    let error = env
+                        .data
+                        .get("error")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("Memory write failed");
+                    let (clean_error, _) = sanitize_display_text(error);
+                    self.base_mut().emit_signal(
+                        "memory_turn_write_failed",
+                        &[
+                            message_id.to_variant(),
+                            companion_id.to_variant(),
+                            clean_error.to_variant(),
+                        ],
+                    );
+                }
+            }
             "ocp.runtime.ai-response" => {
                 let message_id = env
                     .data
