@@ -957,6 +957,131 @@ fn bounded_memory_content_for_transport(content: &str) -> String {
     bounded_memory_text(trimmed, 2400)
 }
 
+fn explicit_long_term_fact(user_text: &str) -> Option<String> {
+    let trimmed = user_text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    for prefix in ["ช่วยจำไว้ว่า", "จำไว้ว่า", "ช่วยจำว่า"]
+    {
+        if let Some(rest) = trimmed.strip_prefix(prefix) {
+            let fact = rest
+                .trim_start_matches(|ch: char| ch.is_whitespace() || matches!(ch, ':' | '-' | ','));
+            let bounded = bounded_memory_text(fact, 1200);
+            return (!bounded.is_empty()).then_some(bounded);
+        }
+    }
+
+    let lower = trimmed.to_ascii_lowercase();
+    for prefix in [
+        "please remember that",
+        "remember that",
+        "please remember:",
+        "remember:",
+    ] {
+        if lower.starts_with(prefix) {
+            let rest = &trimmed[prefix.len()..];
+            let fact = rest
+                .trim_start_matches(|ch: char| ch.is_whitespace() || matches!(ch, ':' | '-' | ','));
+            let bounded = bounded_memory_text(fact, 1200);
+            return (!bounded.is_empty()).then_some(bounded);
+        }
+    }
+    None
+}
+
+fn write_explicit_long_term_memory(
+    store: &mut impl MemoryStore,
+    message_id: &str,
+    user_text: &str,
+) -> Result<Option<uuid::Uuid>, String> {
+    let Some(fact) = explicit_long_term_fact(user_text) else {
+        return Ok(None);
+    };
+    let content = json!({
+        "kind": "explicit-memory",
+        "sourceMessageId": bounded_memory_text(message_id, 160),
+        "text": fact,
+    })
+    .to_string();
+    store
+        .write(
+            &runtime_memory_caller(),
+            MemoryWriteRequest {
+                scope: MemoryScope::UserProfile,
+                content,
+                content_type: MemoryContentType::ApplicationJson,
+                sensitive: true,
+                source: "runtime-v3-explicit-memory".to_owned(),
+            },
+        )
+        .map(|outcome| Some(outcome.record_id))
+        .map_err(|error| format!("write explicit long-term memory failed: {error}"))
+}
+
+fn update_relationship_memory(
+    store: &mut impl MemoryStore,
+    companion_id: &str,
+) -> Result<(uuid::Uuid, u64), String> {
+    let scope = MemoryScope::Companion(companion_id.to_owned());
+    let listed = store
+        .list(
+            &runtime_memory_caller(),
+            MemoryListRequest {
+                scope: scope.clone(),
+                after: None,
+                limit: 256,
+            },
+        )
+        .map_err(|error| format!("list relationship memory failed: {error}"))?;
+
+    let mut previous_turn_count = 0_u64;
+    let mut old_relationship_ids = Vec::new();
+    for record in listed.records {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&record.content) else {
+            continue;
+        };
+        if value.get("kind").and_then(serde_json::Value::as_str) != Some("relationship-state") {
+            continue;
+        }
+        previous_turn_count = previous_turn_count.max(
+            value
+                .get("completedTurnCount")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0),
+        );
+        old_relationship_ids.push(record.id);
+    }
+
+    let completed_turn_count = previous_turn_count.saturating_add(1);
+    let content = json!({
+        "kind": "relationship-state",
+        "completedTurnCount": completed_turn_count,
+        "lastInteractionAt": Utc::now().to_rfc3339(),
+    })
+    .to_string();
+    let outcome = store
+        .write(
+            &runtime_memory_caller(),
+            MemoryWriteRequest {
+                scope,
+                content,
+                content_type: MemoryContentType::ApplicationJson,
+                sensitive: false,
+                source: "runtime-v3-relationship".to_owned(),
+            },
+        )
+        .map_err(|error| format!("write relationship memory failed: {error}"))?;
+
+    if !old_relationship_ids.is_empty() {
+        for result in store.delete(&runtime_memory_caller(), &old_relationship_ids) {
+            result.map_err(|error| format!("cleanup stale relationship memory failed: {error}"))?;
+        }
+    }
+    Ok((outcome.record_id, completed_turn_count))
+}
+
 fn runtime_memory_recent_response(
     env: &Envelope,
     memory_store: &mut Option<SqliteStore>,
@@ -999,27 +1124,45 @@ fn runtime_memory_recent_response(
     let scope = MemoryScope::Companion(companion_id.clone());
 
     let response_data = match ensure_runtime_memory_store(memory_store).and_then(|store| {
-        store
+        let companion_records = store
             .list(
                 &runtime_memory_caller(),
                 MemoryListRequest {
-                    scope,
+                    scope: scope.clone(),
                     after: None,
                     limit: 256,
                 },
             )
-            .map_err(|error| format!("list recent memory failed: {error}"))
+            .map_err(|error| format!("list recent companion memory failed: {error}"))?;
+        let user_profile_records = store
+            .list(
+                &runtime_memory_caller(),
+                MemoryListRequest {
+                    scope: MemoryScope::UserProfile,
+                    after: None,
+                    limit: 256,
+                },
+            )
+            .map_err(|error| format!("list long-term user memory failed: {error}"))?;
+        Ok((companion_records, user_profile_records))
     }) {
-        Ok(listed) => {
-            let mut recent = listed.records;
+        Ok((companion_listed, user_profile_listed)) => {
+            let mut recent = companion_listed.records;
             if recent.len() > limit {
                 recent.drain(0..recent.len() - limit);
             }
-            let records = recent
+            let long_term_limit = limit.min(8);
+            let mut long_term = user_profile_listed.records;
+            if long_term.len() > long_term_limit {
+                long_term.drain(0..long_term.len() - long_term_limit);
+            }
+            let records = long_term
                 .into_iter()
+                .chain(recent)
                 .map(|record| {
                     json!({
                         "recordId": record.id,
+                        "scope": record.scope.as_wire_string(),
                         "content": bounded_memory_content_for_transport(&record.content),
                         "createdAt": record.created_at,
                     })
@@ -1101,8 +1244,8 @@ fn runtime_memory_turn_write_response(
         let content = json!({
             "kind": "conversation-turn",
             "messageId": message_id,
-            "user": user_text,
-            "assistant": assistant_text,
+            "user": &user_text,
+            "assistant": &assistant_text,
         })
         .to_string();
         ensure_runtime_memory_store(memory_store).and_then(|store| {
@@ -1122,12 +1265,38 @@ fn runtime_memory_turn_write_response(
     };
 
     let response_data = match write_result {
-        Ok(outcome) => json!({
-            "messageId": message_id,
-            "companionId": companion_id,
-            "ok": true,
-            "recordId": outcome.record_id,
-        }),
+        Ok(outcome) => {
+            let mut derived_warnings = Vec::new();
+            let mut long_term_record_id = None;
+            let mut relationship_record_id = None;
+            let mut relationship_turn_count = None;
+            match ensure_runtime_memory_store(memory_store) {
+                Ok(store) => {
+                    match write_explicit_long_term_memory(store, message_id, &user_text) {
+                        Ok(record_id) => long_term_record_id = record_id,
+                        Err(error) => derived_warnings.push(error),
+                    }
+                    match update_relationship_memory(store, &companion_id) {
+                        Ok((record_id, turn_count)) => {
+                            relationship_record_id = Some(record_id);
+                            relationship_turn_count = Some(turn_count);
+                        }
+                        Err(error) => derived_warnings.push(error),
+                    }
+                }
+                Err(error) => derived_warnings.push(error),
+            }
+            json!({
+                "messageId": message_id,
+                "companionId": companion_id,
+                "ok": true,
+                "recordId": outcome.record_id,
+                "longTermRecordId": long_term_record_id,
+                "relationshipRecordId": relationship_record_id,
+                "relationshipTurnCount": relationship_turn_count,
+                "derivedWarnings": derived_warnings,
+            })
+        }
         Err(error) => json!({
             "messageId": message_id,
             "companionId": companion_id,
@@ -3070,6 +3239,103 @@ mod tests {
                 .count(),
             900
         );
+    }
+
+    #[test]
+    fn explicit_long_term_memory_requires_an_explicit_remember_command() {
+        assert_eq!(
+            explicit_long_term_fact("จำไว้ว่าฉันชอบชาเขียว").as_deref(),
+            Some("ฉันชอบชาเขียว")
+        );
+        assert_eq!(
+            explicit_long_term_fact("Please remember that my preferred editor is VS Code")
+                .as_deref(),
+            Some("my preferred editor is VS Code")
+        );
+        assert!(explicit_long_term_fact("ฉันชอบชาเขียว").is_none());
+        assert!(explicit_long_term_fact("I remember that meeting clearly").is_none());
+    }
+
+    #[test]
+    fn runtime_memory_recall_merges_explicit_profile_episodic_and_relationship_context() {
+        let mut store = SqliteStore::open_in_memory().expect("memory store");
+        let companion_scope = MemoryScope::Companion("default".to_owned());
+        store
+            .write(
+                &runtime_memory_caller(),
+                MemoryWriteRequest {
+                    scope: companion_scope,
+                    content: json!({
+                        "kind": "conversation-turn",
+                        "messageId": "m-episode",
+                        "user": "วันนี้ทำงานต่อ",
+                        "assistant": "ได้เลย",
+                    })
+                    .to_string(),
+                    content_type: MemoryContentType::ApplicationJson,
+                    sensitive: false,
+                    source: "test".to_owned(),
+                },
+            )
+            .expect("episodic write");
+        let explicit_id = write_explicit_long_term_memory(
+            &mut store,
+            "m-explicit",
+            "ช่วยจำไว้ว่า project codename คือ Aurora",
+        )
+        .expect("explicit memory write")
+        .expect("explicit memory id");
+        let (_, first_count) =
+            update_relationship_memory(&mut store, "default").expect("first relationship update");
+        let (_, second_count) =
+            update_relationship_memory(&mut store, "default").expect("second relationship update");
+        assert_eq!((first_count, second_count), (1, 2));
+
+        let profile = store
+            .list(
+                &runtime_memory_caller(),
+                MemoryListRequest {
+                    scope: MemoryScope::UserProfile,
+                    after: None,
+                    limit: 16,
+                },
+            )
+            .expect("profile list");
+        let explicit_record = profile
+            .records
+            .iter()
+            .find(|record| record.id == explicit_id)
+            .expect("explicit profile record");
+        assert!(
+            explicit_record.sensitive,
+            "UserProfile memory must stay sensitive"
+        );
+
+        let request = Envelope::new(
+            "ocp.runtime.memory-recent-requested",
+            "test",
+            json!({"requestId": "recall-1", "companionId": "default", "limit": 8}),
+        )
+        .expect("request envelope");
+        let mut memory_store = Some(store);
+        let response = runtime_memory_recent_response(&request, &mut memory_store)
+            .expect("recent memory response");
+        assert_eq!(response.data["ok"], true);
+        let records = response.data["records"].as_array().expect("records array");
+        let parsed = records
+            .iter()
+            .filter_map(|record| record.get("content").and_then(serde_json::Value::as_str))
+            .filter_map(|content| serde_json::from_str::<serde_json::Value>(content).ok())
+            .collect::<Vec<_>>();
+        assert!(parsed.iter().any(|value| {
+            value["kind"] == "explicit-memory" && value["text"] == "project codename คือ Aurora"
+        }));
+        assert!(parsed
+            .iter()
+            .any(|value| value["kind"] == "conversation-turn"));
+        assert!(parsed.iter().any(|value| {
+            value["kind"] == "relationship-state" && value["completedTurnCount"] == 2
+        }));
     }
 
     #[test]

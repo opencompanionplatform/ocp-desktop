@@ -4,6 +4,7 @@ class_name RuntimeV3MemoryService
 var _session_memory: Dictionary = {}
 var bridge: Node
 var recent_companion_records: Array = []
+var relationship_state: Dictionary = {}
 var _recent_request_sequence := 0
 
 
@@ -39,6 +40,10 @@ func recent_context() -> Array:
 	return recent_companion_records.duplicate(true)
 
 
+func relationship_context() -> Dictionary:
+	return relationship_state.duplicate(true)
+
+
 func prompt_fragment() -> String:
 	if recent_companion_records.is_empty():
 		return ""
@@ -48,14 +53,31 @@ func prompt_fragment() -> String:
 		if content.is_empty():
 			continue
 		var parsed: Variant = JSON.parse_string(content)
-		if parsed is Dictionary and str((parsed as Dictionary).get("kind", "")) == "conversation-turn":
-			var turn: Dictionary = parsed
-			var user_text := str(turn.get("user", "")).strip_edges().left(600)
-			var assistant_text := str(turn.get("assistant", "")).strip_edges().left(900)
-			if not user_text.is_empty() and not assistant_text.is_empty():
-				lines.append("User: %s | Companion: %s" % [user_text, assistant_text])
-		else:
+		if not (parsed is Dictionary):
 			lines.append(content.left(1200))
+			continue
+		var memory: Dictionary = parsed
+		match str(memory.get("kind", "")):
+			"conversation-turn":
+				var user_text := str(memory.get("user", "")).strip_edges().left(600)
+				var assistant_text := str(memory.get("assistant", "")).strip_edges().left(900)
+				if not user_text.is_empty() and not assistant_text.is_empty():
+					lines.append("User: %s | Companion: %s" % [user_text, assistant_text])
+			"explicit-memory":
+				var fact := str(memory.get("text", "")).strip_edges().left(1200)
+				if not fact.is_empty():
+					lines.append("Explicitly remembered user fact: %s" % fact)
+			"relationship-state":
+				pass
+			_:
+				lines.append(content.left(1200))
+	if not relationship_state.is_empty():
+		var completed_turns := maxi(0, int(relationship_state.get("completedTurnCount", 0)))
+		var last_interaction := str(relationship_state.get("lastInteractionAt", "")).strip_edges().left(80)
+		lines.append("Interaction continuity: %d completed conversation turns%s" % [
+			completed_turns,
+			"; last interaction %s" % last_interaction if not last_interaction.is_empty() else "",
+		])
 	if lines.is_empty():
 		return ""
 	var joined := "\n".join(lines).left(6000)
@@ -126,17 +148,31 @@ func _on_memory_recent_received(_request_id: String, companion_id: String, recor
 	if not (parsed is Array):
 		return
 	recent_companion_records.clear()
+	relationship_state.clear()
 	for record_value in parsed:
 		if record_value is Dictionary:
 			var record: Dictionary = record_value
-			if not str(record.get("content", "")).strip_edges().is_empty():
-				recent_companion_records.append(record.duplicate(true))
+			var content := str(record.get("content", "")).strip_edges()
+			if content.is_empty():
+				continue
+			recent_companion_records.append(record.duplicate(true))
+			var content_value: Variant = JSON.parse_string(content)
+			if content_value is Dictionary and str((content_value as Dictionary).get("kind", "")) == "relationship-state":
+				var candidate: Dictionary = content_value
+				if relationship_state.is_empty() or int(candidate.get("completedTurnCount", 0)) >= int(relationship_state.get("completedTurnCount", 0)):
+					relationship_state = candidate.duplicate(true)
 	event_bus.publish(&"memory.context_updated", {
 		"companion_id": companion_id,
 		"record_count": recent_companion_records.size(),
 		"records": recent_companion_records.duplicate(true),
 		"prompt_fragment": prompt_fragment(),
 	})
+	if not relationship_state.is_empty():
+		event_bus.publish(&"memory.relationship_updated", {
+			"companion_id": companion_id,
+			"completed_turn_count": maxi(0, int(relationship_state.get("completedTurnCount", 0))),
+			"last_interaction_at": str(relationship_state.get("lastInteractionAt", "")),
+		})
 
 
 func _on_memory_recent_failed(_request_id: String, companion_id: String, error: String) -> void:
