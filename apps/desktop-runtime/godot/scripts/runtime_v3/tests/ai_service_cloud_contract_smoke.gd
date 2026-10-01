@@ -54,7 +54,9 @@ func _run() -> void:
 	service.start()
 	var status: Dictionary = service.provider_status()
 	service.request({"message_id": "msg-service-cloud", "prompt": "hello"})
-	await process_frame
+	# This focused test has no MemoryService bound, so the provider-neutral
+	# relevant-recall gate must fall back within its bounded 80 ms budget.
+	await create_timer(0.12).timeout
 	await process_frame
 	service.test_connection()
 	await process_frame

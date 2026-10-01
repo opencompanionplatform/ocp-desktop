@@ -51,7 +51,7 @@
 
 #![forbid(unsafe_code)] // SEC-042
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::BufRead;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -95,7 +95,8 @@ use ocp_llm_router::{
 };
 use ocp_memory::{
     Caller as MemoryCaller, ContentType as MemoryContentType, ListRequest as MemoryListRequest,
-    MemoryScope, MemoryStore, OsKeystoreKeyStore, SqliteStore, WriteRequest as MemoryWriteRequest,
+    MemoryScope, MemoryStore, OsKeystoreKeyStore, RecallBudget as MemoryRecallBudget,
+    RecallRequest as MemoryRecallRequest, SqliteStore, WriteRequest as MemoryWriteRequest,
 };
 use ocp_package_loader::{load as load_package, TrustStore};
 use ocp_shared_types::{Envelope, Point2};
@@ -1080,6 +1081,215 @@ fn update_relationship_memory(
         }
     }
     Ok((outcome.record_id, completed_turn_count))
+}
+
+fn relevant_memory_queries(query: &str) -> Vec<String> {
+    let mut cleaned = query.trim().to_owned();
+    if cleaned.is_empty() {
+        return Vec::new();
+    }
+
+    for thai_question in [
+        "อะไรบ้าง",
+        "อะไร",
+        "ที่ไหน",
+        "เมื่อไหร่",
+        "เมื่อไร",
+        "ใคร",
+        "ทำไม",
+        "ยังไง",
+        "อย่างไร",
+        "หรือไม่",
+        "ไหม",
+    ] {
+        cleaned = cleaned.replace(thai_question, " ");
+    }
+    cleaned = cleaned
+        .chars()
+        .map(|ch| {
+            if ch.is_alphanumeric() || ch.is_whitespace() || matches!(ch, '_' | '-' | '.') {
+                ch
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>();
+
+    let english_stop_words = [
+        "what", "which", "where", "when", "who", "why", "how", "is", "are", "was", "were", "do",
+        "does", "did", "can", "could", "would", "should", "please", "tell", "me",
+    ];
+    let normalized_tokens = cleaned
+        .split_whitespace()
+        .filter(|token| {
+            let lower = token.to_ascii_lowercase();
+            !english_stop_words.contains(&lower.as_str())
+        })
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let normalized = bounded_memory_text(&normalized_tokens.join(" "), 600);
+    if normalized.is_empty() {
+        return Vec::new();
+    }
+
+    let mut queries = vec![normalized.clone()];
+    for token in normalized.split_whitespace() {
+        if token.chars().count() < 3 {
+            continue;
+        }
+        if !queries
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(token))
+        {
+            queries.push(token.to_owned());
+        }
+        if queries.len() >= 5 {
+            break;
+        }
+    }
+    queries
+}
+
+fn runtime_memory_relevant_response(
+    env: &Envelope,
+    memory_store: &mut Option<SqliteStore>,
+) -> Option<Envelope> {
+    if env.event_type != "ocp.runtime.memory-relevant-requested" {
+        return None;
+    }
+    let request_id = env
+        .data
+        .get("requestId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    let raw_companion_id = env
+        .data
+        .get("companionId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("default");
+    let companion_id = match normalized_runtime_memory_companion_id(raw_companion_id) {
+        Ok(value) => value,
+        Err(error) => {
+            let response_data = json!({
+                "requestId": request_id,
+                "companionId": raw_companion_id,
+                "ok": false,
+                "error": error,
+                "excerpts": [],
+            });
+            return Envelope::new("ocp.runtime.memory-relevant", "kernel", response_data)
+                .ok()
+                .map(|reply| reply.with_correlation(env.id));
+        }
+    };
+    let query = bounded_memory_text(
+        env.data
+            .get("query")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default(),
+        1200,
+    );
+    let max_excerpts = env
+        .data
+        .get("maxExcerpts")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(6)
+        .clamp(1, 8) as usize;
+    let queries = relevant_memory_queries(&query);
+    if queries.is_empty() {
+        let response_data = json!({
+            "requestId": request_id,
+            "companionId": companion_id,
+            "ok": true,
+            "query": "",
+            "excerpts": [],
+            "truncated": false,
+        });
+        return Envelope::new("ocp.runtime.memory-relevant", "kernel", response_data)
+            .ok()
+            .map(|reply| reply.with_correlation(env.id));
+    }
+
+    let response_data = match ensure_runtime_memory_store(memory_store) {
+        Ok(store) => {
+            let mut seen = HashSet::new();
+            let mut excerpts = Vec::new();
+            let mut truncated = false;
+            for recall_query in &queries {
+                let recalled = match store.recall(
+                    &runtime_memory_caller(),
+                    MemoryRecallRequest {
+                        query: recall_query.clone(),
+                        scopes: vec![
+                            MemoryScope::UserProfile,
+                            MemoryScope::Companion(companion_id.clone()),
+                        ],
+                        budget: MemoryRecallBudget {
+                            max_excerpts,
+                            max_chars: 12_000,
+                        },
+                    },
+                ) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        return Envelope::new(
+                            "ocp.runtime.memory-relevant",
+                            "kernel",
+                            json!({
+                                "requestId": request_id,
+                                "companionId": companion_id,
+                                "ok": false,
+                                "error": format!("relevant memory recall failed: {error}"),
+                                "excerpts": [],
+                            }),
+                        )
+                        .ok()
+                        .map(|reply| reply.with_correlation(env.id));
+                    }
+                };
+                truncated |= recalled.truncated;
+                for excerpt in recalled.excerpts {
+                    if !seen.insert(excerpt.record_id) {
+                        continue;
+                    }
+                    excerpts.push(json!({
+                        "recordId": excerpt.record_id,
+                        "scope": excerpt.scope.as_wire_string(),
+                        "excerpt": bounded_memory_content_for_transport(&excerpt.excerpt),
+                        "sensitive": excerpt.sensitive,
+                        "score": excerpt.score,
+                    }));
+                    if excerpts.len() >= max_excerpts {
+                        truncated = true;
+                        break;
+                    }
+                }
+                if excerpts.len() >= max_excerpts {
+                    break;
+                }
+            }
+            json!({
+                "requestId": request_id,
+                "companionId": companion_id,
+                "ok": true,
+                "query": queries[0],
+                "excerpts": excerpts,
+                "truncated": truncated,
+            })
+        }
+        Err(error) => json!({
+            "requestId": request_id,
+            "companionId": companion_id,
+            "ok": false,
+            "error": error,
+            "excerpts": [],
+        }),
+    };
+
+    Envelope::new("ocp.runtime.memory-relevant", "kernel", response_data)
+        .ok()
+        .map(|reply| reply.with_correlation(env.id))
 }
 
 fn runtime_memory_recent_response(
@@ -3161,6 +3371,15 @@ fn drain_outcomes(
                     continue;
                 }
 
+                if env.event_type == "ocp.runtime.memory-relevant-requested" {
+                    if let Some(response) =
+                        runtime_memory_relevant_response(&env, &mut runtime_memory_store)
+                    {
+                        push(&presentation, &response);
+                    }
+                    continue;
+                }
+
                 if env.event_type == "ocp.runtime.memory-recent-requested" {
                     if let Some(response) =
                         runtime_memory_recent_response(&env, &mut runtime_memory_store)
@@ -3335,6 +3554,206 @@ mod tests {
             .any(|value| value["kind"] == "conversation-turn"));
         assert!(parsed.iter().any(|value| {
             value["kind"] == "relationship-state" && value["completedTurnCount"] == 2
+        }));
+    }
+
+    #[test]
+    fn relevant_memory_query_normalization_keeps_topic_terms_and_drops_question_noise() {
+        let thai = relevant_memory_queries("project codename อะไร?");
+        assert!(!thai.is_empty());
+        assert_eq!(thai[0], "project codename");
+        assert!(thai.iter().any(|query| query == "project"));
+        assert!(thai.iter().any(|query| query == "codename"));
+
+        let english = relevant_memory_queries("What is the project codename?");
+        assert!(!english.is_empty());
+        assert!(english[0].contains("project"));
+        assert!(english[0].contains("codename"));
+        assert!(!english[0]
+            .split_whitespace()
+            .any(|token| token.eq_ignore_ascii_case("what")));
+    }
+
+    #[test]
+    fn runtime_memory_relevant_recall_finds_older_matching_memory_and_excludes_unrelated_content() {
+        let mut store = SqliteStore::open_in_memory().expect("memory store");
+        let caller = runtime_memory_caller();
+        store
+            .write(
+                &caller,
+                MemoryWriteRequest {
+                    scope: MemoryScope::UserProfile,
+                    content: json!({
+                        "kind": "explicit-memory",
+                        "sourceMessageId": "m-old-profile",
+                        "text": "project codename คือ Aurora",
+                    })
+                    .to_string(),
+                    content_type: MemoryContentType::ApplicationJson,
+                    sensitive: true,
+                    source: "test".to_owned(),
+                },
+            )
+            .expect("profile write");
+        store
+            .write(
+                &caller,
+                MemoryWriteRequest {
+                    scope: MemoryScope::Companion("default".to_owned()),
+                    content: json!({
+                        "kind": "conversation-turn",
+                        "messageId": "m-old-turn",
+                        "user": "เราตกลง project codename ไว้ว่า Aurora",
+                        "assistant": "รับทราบ Aurora",
+                    })
+                    .to_string(),
+                    content_type: MemoryContentType::ApplicationJson,
+                    sensitive: false,
+                    source: "test".to_owned(),
+                },
+            )
+            .expect("episodic write");
+        store
+            .write(
+                &caller,
+                MemoryWriteRequest {
+                    scope: MemoryScope::Companion("default".to_owned()),
+                    content: json!({
+                        "kind": "conversation-turn",
+                        "messageId": "m-unrelated",
+                        "user": "ฉันชอบกาแฟดำ",
+                        "assistant": "รับทราบเรื่องกาแฟ",
+                    })
+                    .to_string(),
+                    content_type: MemoryContentType::ApplicationJson,
+                    sensitive: false,
+                    source: "test".to_owned(),
+                },
+            )
+            .expect("unrelated write");
+
+        let request = Envelope::new(
+            "ocp.runtime.memory-relevant-requested",
+            "test",
+            json!({
+                "requestId": "relevant-1",
+                "companionId": "default",
+                "query": "project codename อะไร?",
+                "maxExcerpts": 4,
+            }),
+        )
+        .expect("request envelope");
+        let mut memory_store = Some(store);
+        let response = runtime_memory_relevant_response(&request, &mut memory_store)
+            .expect("relevant response");
+        assert_eq!(response.data["ok"], true);
+        assert_eq!(response.data["query"], "project codename");
+        let excerpts = response.data["excerpts"]
+            .as_array()
+            .expect("excerpts array");
+        assert!(!excerpts.is_empty());
+        assert!(excerpts.len() <= 4);
+        let contents = excerpts
+            .iter()
+            .filter_map(|entry| entry.get("excerpt").and_then(serde_json::Value::as_str))
+            .collect::<Vec<_>>();
+        assert!(contents.iter().any(|content| content.contains("Aurora")));
+        assert!(contents.iter().all(|content| !content.contains("กาแฟดำ")));
+    }
+
+    #[test]
+    fn relevant_memory_query_normalization_removes_question_noise() {
+        let thai = relevant_memory_queries("project codename อะไร");
+        assert_eq!(thai.first().map(String::as_str), Some("project codename"));
+
+        let english = relevant_memory_queries("What is my preferred editor?");
+        assert_eq!(
+            english.first().map(String::as_str),
+            Some("my preferred editor")
+        );
+        assert!(english
+            .iter()
+            .any(|query| query.eq_ignore_ascii_case("preferred")));
+        assert!(english
+            .iter()
+            .any(|query| query.eq_ignore_ascii_case("editor")));
+    }
+
+    #[test]
+    fn relevant_memory_recall_finds_deep_profile_and_token_fallback_context() {
+        let mut store = SqliteStore::open_in_memory().expect("memory store");
+        write_explicit_long_term_memory(
+            &mut store,
+            "m-project",
+            "จำไว้ว่า project codename คือ Aurora",
+        )
+        .expect("project memory write")
+        .expect("project memory id");
+        store
+            .write(
+                &runtime_memory_caller(),
+                MemoryWriteRequest {
+                    scope: MemoryScope::Companion("default".to_owned()),
+                    content: json!({
+                        "kind": "conversation-turn",
+                        "messageId": "m-music",
+                        "user": "I like LoFi music while working",
+                        "assistant": "Noted",
+                    })
+                    .to_string(),
+                    content_type: MemoryContentType::ApplicationJson,
+                    sensitive: false,
+                    source: "test".to_owned(),
+                },
+            )
+            .expect("music turn write");
+
+        let project_request = Envelope::new(
+            "ocp.runtime.memory-relevant-requested",
+            "test",
+            json!({
+                "requestId": "rel-project",
+                "companionId": "default",
+                "query": "project codename อะไร",
+                "maxExcerpts": 4,
+            }),
+        )
+        .expect("project recall request");
+        let mut memory_store = Some(store);
+        let project_response =
+            runtime_memory_relevant_response(&project_request, &mut memory_store)
+                .expect("project recall response");
+        let project_excerpts = project_response.data["excerpts"]
+            .as_array()
+            .expect("project excerpts");
+        assert!(project_excerpts.iter().any(|excerpt| {
+            excerpt
+                .get("excerpt")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|content| content.contains("Aurora"))
+        }));
+
+        let music_request = Envelope::new(
+            "ocp.runtime.memory-relevant-requested",
+            "test",
+            json!({
+                "requestId": "rel-music",
+                "companionId": "default",
+                "query": "What music do I like?",
+                "maxExcerpts": 4,
+            }),
+        )
+        .expect("music recall request");
+        let music_response = runtime_memory_relevant_response(&music_request, &mut memory_store)
+            .expect("music recall response");
+        let music_excerpts = music_response.data["excerpts"]
+            .as_array()
+            .expect("music excerpts");
+        assert!(music_excerpts.iter().any(|excerpt| {
+            excerpt
+                .get("excerpt")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|content| content.contains("LoFi music"))
         }));
     }
 

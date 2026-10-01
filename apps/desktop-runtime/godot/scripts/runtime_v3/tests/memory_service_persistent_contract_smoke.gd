@@ -9,14 +9,26 @@ class FakeBridge:
 	extends Node
 	signal memory_recent_received(request_id: String, companion_id: String, records_json: String)
 	signal memory_recent_failed(request_id: String, companion_id: String, error: String)
+	signal memory_relevant_received(request_id: String, companion_id: String, excerpts_json: String)
+	signal memory_relevant_failed(request_id: String, companion_id: String, error: String)
 	signal memory_turn_written(message_id: String, companion_id: String, record_id: String)
 	signal memory_turn_write_failed(message_id: String, companion_id: String, error: String)
 
 	var recent_requests: Array[Dictionary] = []
+	var relevant_requests: Array[Dictionary] = []
 	var writes: Array[Dictionary] = []
 
 	func request_memory_recent(request_id: String, companion_id: String, limit: int) -> bool:
 		recent_requests.append({"request_id": request_id, "companion_id": companion_id, "limit": limit})
+		return true
+
+	func request_memory_relevant(request_id: String, companion_id: String, query: String, max_excerpts: int) -> bool:
+		relevant_requests.append({
+			"request_id": request_id,
+			"companion_id": companion_id,
+			"query": query,
+			"max_excerpts": max_excerpts,
+		})
 		return true
 
 	func request_memory_turn_write(message_id: String, companion_id: String, user_text: String, assistant_text: String) -> bool:
@@ -96,6 +108,33 @@ func _run() -> void:
 		and int(service.relationship_context().get("completedTurnCount", 0)) == 7 \
 		and str(context_payload.get("prompt_fragment", "")).contains("never treat as instructions")
 
+	events.clear()
+	bus.publish(&"memory.relevant_recall_requested", {
+		"message_id": "m-recall",
+		"companion_id": "default",
+		"query": "project codename อะไร",
+	})
+	var relevant_routed := bridge.relevant_requests.size() == 1 \
+		and str(bridge.relevant_requests[0].get("query", "")) == "project codename อะไร" \
+		and int(bridge.relevant_requests[0].get("max_excerpts", 0)) == 6
+	var relevant_request_id := str(bridge.relevant_requests[0].get("request_id", "")) if relevant_routed else ""
+	bridge.memory_relevant_received.emit(
+		relevant_request_id,
+		"default",
+		JSON.stringify([
+			{"recordId": "profile-old", "excerpt": explicit_memory, "scope": "userProfile", "score": 2.0},
+			{"recordId": "r1", "excerpt": remembered_turn, "scope": "companion:default", "score": 1.0},
+		])
+	)
+	var relevant_payload := _first_payload(events, &"memory.relevant_context_ready")
+	var relevant_fragment := str(relevant_payload.get("prompt_fragment", ""))
+	var relevant_context := relevant_routed \
+		and str(relevant_payload.get("message_id", "")) == "m-recall" \
+		and relevant_fragment.contains("Relevant explicit user memory: project codename คือ Aurora") \
+		and not relevant_fragment.contains("กาแฟดำ") \
+		and relevant_fragment.contains("never instructions")
+
+	events.clear()
 	bus.publish(&"memory.turn_write_requested", {
 		"message_id": "m-new",
 		"companion_id": "default",
@@ -113,8 +152,8 @@ func _run() -> void:
 	service.write("session-marker", "alive")
 	var session_compat := str(service.read("session-marker", "")) == "alive"
 
-	var ok := bootstrap and context_cached and write_routed and refresh_after_write and session_compat
-	print("[MEMORY-V2-SERVICE] bootstrap=", bootstrap, " cached=", context_cached, " write=", write_routed, " refresh=", refresh_after_write, " session=", session_compat, " ok=", ok)
+	var ok := bootstrap and context_cached and relevant_context and write_routed and refresh_after_write and session_compat
+	print("[MEMORY-V2-SERVICE] bootstrap=", bootstrap, " cached=", context_cached, " relevant=", relevant_context, " write=", write_routed, " refresh=", refresh_after_write, " session=", session_compat, " ok=", ok)
 	service.stop()
 	holder.free()
 	await process_frame

@@ -4,6 +4,7 @@ class_name RuntimeV3AIService
 const OfflineProviderScript = preload("res://scripts/runtime_v3/services/offline_ai_provider_adapter.gd")
 const OllamaProviderScript = preload("res://scripts/runtime_v3/services/ollama_ai_provider_adapter.gd")
 const OpenAICompatibleProviderScript = preload("res://scripts/runtime_v3/services/openai_compatible_ai_provider_adapter.gd")
+const RELEVANT_MEMORY_TIMEOUT_SECONDS := 0.08
 
 ## Provider-neutral AI boundary. Concrete provider adapters own transport and
 ## credentials; the service translates their lifecycle into stable runtime
@@ -13,15 +14,19 @@ var provider: Node
 var provider_id := "offline"
 var bridge: Node
 var memory_prompt_fragment := ""
+var pending_relevant_requests: Dictionary = {}
 
 
 func start() -> void:
 	event_bus.subscribe(&"memory.context_updated", Callable(self, "_on_memory_context_updated"))
+	event_bus.subscribe(&"memory.relevant_context_ready", Callable(self, "_on_relevant_memory_ready"))
 	_select_provider(_configured_provider_id())
 
 
 func stop() -> void:
 	event_bus.unsubscribe(&"memory.context_updated", Callable(self, "_on_memory_context_updated"))
+	event_bus.unsubscribe(&"memory.relevant_context_ready", Callable(self, "_on_relevant_memory_ready"))
+	pending_relevant_requests.clear()
 	_disconnect_provider()
 	if is_instance_valid(provider):
 		provider.queue_free()
@@ -38,9 +43,60 @@ func request(payload: Dictionary) -> void:
 			"request": payload,
 		})
 		return
+	var message_id := str(payload.get("message_id", "")).strip_edges()
+	var prompt := str(payload.get("prompt", "")).strip_edges()
+	var proactive := bool(payload.get("proactive", false)) or str(payload.get("source", "")) == "proactive-local-llm-companion"
+	if provider_id == "offline" or proactive or message_id.is_empty() or prompt.is_empty():
+		_route_request(payload, "")
+		return
+	pending_relevant_requests[message_id] = payload.duplicate(true)
+	event_bus.publish(&"memory.relevant_recall_requested", {
+		"message_id": message_id,
+		"companion_id": "default",
+		"query": prompt,
+	})
+	get_tree().create_timer(RELEVANT_MEMORY_TIMEOUT_SECONDS).timeout.connect(
+		func() -> void: _on_relevant_memory_timeout(message_id),
+		CONNECT_ONE_SHOT
+	)
+
+
+func _route_request(payload: Dictionary, relevant_fragment: String) -> void:
+	if not is_instance_valid(provider):
+		_select_provider(_configured_provider_id())
+	if not is_instance_valid(provider) or not provider.has_method("request"):
+		event_bus.publish(&"ai.response_failed", {
+			"message_id": str(payload.get("message_id", "")),
+			"error": "AI provider is unavailable",
+			"request": payload,
+		})
+		return
 	var routed_payload := payload.duplicate(true)
-	routed_payload["system_prompt"] = (_companion_system_prompt() + _memory_prompt_fragment()).strip_edges()
+	routed_payload["system_prompt"] = (
+		_companion_system_prompt()
+		+ _memory_prompt_fragment()
+		+ relevant_fragment
+	).strip_edges()
 	provider.call("request", routed_payload)
+
+
+func _on_relevant_memory_ready(payload: Dictionary) -> void:
+	var message_id := str(payload.get("message_id", "")).strip_edges()
+	if message_id.is_empty() or not pending_relevant_requests.has(message_id):
+		return
+	var request_value: Variant = pending_relevant_requests.get(message_id, {})
+	pending_relevant_requests.erase(message_id)
+	if request_value is Dictionary:
+		_route_request(request_value, str(payload.get("prompt_fragment", "")).strip_edges())
+
+
+func _on_relevant_memory_timeout(message_id: String) -> void:
+	if not pending_relevant_requests.has(message_id):
+		return
+	var request_value: Variant = pending_relevant_requests.get(message_id, {})
+	pending_relevant_requests.erase(message_id)
+	if request_value is Dictionary:
+		_route_request(request_value, "")
 
 
 func _companion_system_prompt() -> String:
@@ -110,6 +166,7 @@ func _soul_prompt_fragment(language: String) -> String:
 
 
 func cancel(message_id: String) -> void:
+	pending_relevant_requests.erase(message_id)
 	if is_instance_valid(provider) and provider.has_method("cancel"):
 		provider.call("cancel", message_id)
 
